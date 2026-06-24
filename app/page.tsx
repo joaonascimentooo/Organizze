@@ -4,7 +4,7 @@ import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "motion/react";
 import { useFinances } from "@/hooks/use-finances";
-import { categories, Category, Expense, PlannedPurchase } from "@/lib/types";
+import { categories, Category, emptyMonth, Expense, PlannedPurchase } from "@/lib/types";
 import { deleteProductImage, loadProductImages, optimizeProductImage, saveProductImage, validateProductImage } from "@/lib/product-images";
 
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -123,7 +123,7 @@ function CategorySelect({ defaultValue = "Outros" }: { defaultValue?: Category }
   );
 }
 
-export type OrganizzeView = "overview" | "expenses" | "planning";
+export type OrganizzeView = "overview" | "expenses" | "planning" | "settings";
 
 export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
   const reduceMotion = useReducedMotion();
@@ -208,6 +208,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
     overview: { eyebrow: "PAINEL FINANCEIRO", title: "Olá, vamos organizar?", description: "Seu dinheiro fica mais leve quando cada real tem um lugar." },
     expenses: { eyebrow: "MEUS GASTOS", title: "Tudo o que saiu, em um só lugar", description: "Acompanhe cada gasto do mês e mantenha seu saldo sob controle." },
     planning: { eyebrow: "PLANEJAMENTO", title: "Planeje antes de comprar", description: "Reserve o valor das próximas compras e veja o impacto no seu salário." },
+    settings: { eyebrow: "CONFIGURAÇÕES", title: "Seu Organizze, do seu jeito", description: "Ajuste os valores mensais, confira sua conta e gerencie seus dados." },
   }[view];
 
   function saveSalary(event: FormEvent<HTMLFormElement>) {
@@ -222,6 +223,23 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
     const form = new FormData(event.currentTarget);
     update((current) => ({ ...current, mealAllowance: Number(form.get("mealAllowance")) || 0 }));
     setModal(null);
+  }
+
+  function saveMonthlySettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    update((current) => ({
+      ...current,
+      salary: Number(form.get("salary")) || 0,
+      mealAllowance: Number(form.get("mealAllowance")) || 0,
+    }));
+  }
+
+  function clearCurrentMonth() {
+    const confirmed = window.confirm(`Apagar salário, vale, gastos e planejamentos de ${labelMonth(month)}? Esta ação não pode ser desfeita.`);
+    if (!confirmed) return;
+    for (const item of data.planned) void deleteProductImage(user?.uid ?? null, item.imageId);
+    update(() => emptyMonth());
   }
 
   function addExpense(event: FormEvent<HTMLFormElement>) {
@@ -416,7 +434,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
         </nav>
         <div className="sidebar-bottom">
           <div className="small-note"><span><Icon name="cloud" size={17}/>{cloudEnabled && user ? "Sincronizado" : "Salvo neste navegador"}</span><small>{cloudEnabled && user ? `Conta de ${userName}` : "Conecte o Firebase quando quiser"}</small></div>
-          <a href="#config"><Icon name="settings"/>Configurações</a>
+          <Link className={view === "settings" ? "active" : ""} href="/configuracoes"><Icon name="settings"/>Configurações</Link>
           <div className="profile"><span>{initials}</span><div><strong>{userName}</strong><small>{user?.email || "Modo local"}</small></div>{user && <button onClick={signOut} aria-label="Sair da conta" title="Sair"><Icon name="logout" size={17}/></button>}</div>
         </div>
       </aside>
@@ -433,7 +451,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
 
         {!cloudEnabled && <div className="local-banner"><span>Modo local</span> Seus dados já estão sendo salvos neste dispositivo. Adicione as credenciais do Firebase para sincronizá-los na nuvem.</div>}
 
-        <section className={`summary-grid ${view === "overview" ? "overview-summary" : view === "expenses" ? "expense-summary" : "planning-summary"} ${loading ? "is-loading" : ""}`} id="inicio">
+        {view !== "settings" && <section className={`summary-grid ${view === "overview" ? "overview-summary" : view === "expenses" ? "expense-summary" : "planning-summary"} ${loading ? "is-loading" : ""}`} id="inicio">
           {view !== "expenses" && <>
           <article className="summary-card salary-card">
             <div className="card-heading"><span className="card-icon lime"><Icon name="wallet"/></span><span>Salário do mês</span><button onClick={() => setModal("salary")} aria-label="Editar salário"><Icon name="pencil" size={17}/></button></div>
@@ -460,7 +478,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
             <div className="card-heading"><span>Saldo livre</span><span className="live-dot">AGORA</span></div>
             <strong>{money.format(available)}</strong><small>Depois dos gastos do salário e planos</small>
           </article>
-        </section>
+        </section>}
 
         <section className={`content-grid ${view === "expenses" ? "expense-content" : view !== "overview" ? "focused-content" : ""}`}>
           {view === "overview" && <>
@@ -551,10 +569,35 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
               })}</div>}
           </article>
           }
+
+          {view === "settings" && <div className="settings-grid">
+            <article className="panel settings-panel settings-finance-panel">
+              <div className="settings-heading"><span className="settings-icon"><Icon name="wallet"/></span><div><span className="eyebrow">VALORES MENSAIS</span><h2>Base de {labelMonth(month)}</h2><p>Esses valores são independentes para cada mês.</p></div></div>
+              <form className="settings-form" key={month} onSubmit={saveMonthlySettings}>
+                <div className="settings-fields">
+                  <label>Salário líquido<input name="salary" type="number" min="0" step="0.01" defaultValue={data.salary || ""} placeholder="R$ 0,00"/></label>
+                  <label>Vale-alimentação<input name="mealAllowance" type="number" min="0" step="0.01" defaultValue={data.mealAllowance || ""} placeholder="R$ 0,00"/></label>
+                </div>
+                <button className="primary-button" type="submit">Salvar valores do mês</button>
+              </form>
+            </article>
+
+            <article className="panel settings-panel">
+              <div className="settings-heading"><span className="settings-icon"><Icon name="cloud"/></span><div><span className="eyebrow">CONTA E SINCRONIZAÇÃO</span><h2>{cloudEnabled ? "Dados protegidos na nuvem" : "Dados neste dispositivo"}</h2><p>{cloudEnabled ? "Suas alterações são sincronizadas automaticamente." : "O modo local mantém tudo salvo apenas neste navegador."}</p></div></div>
+              <div className="account-details"><div><span>Perfil</span><strong>{user?.displayName || "Modo local"}</strong></div><div><span>E-mail</span><strong>{user?.email || "Não conectado"}</strong></div><div><span>Status</span><strong className="sync-status"><i/>{cloudEnabled ? "Sincronizado" : "Armazenamento local"}</strong></div></div>
+              {user && <button className="secondary-button" onClick={signOut}><Icon name="logout" size={17}/>Sair da conta</button>}
+            </article>
+
+            <article className="panel settings-panel settings-data-panel">
+              <div className="settings-heading"><span className="settings-icon danger"><Icon name="trash"/></span><div><span className="eyebrow">DADOS DO MÊS</span><h2>Gerenciar {labelMonth(month)}</h2><p>As compras futuras globais não serão removidas.</p></div></div>
+              <div className="month-data-summary"><div><strong>{data.expenses.length}</strong><span>gastos</span></div><div><strong>{data.planned.length}</strong><span>planos deste mês</span></div><div><strong>{futurePlanned.length}</strong><span>compras futuras</span></div></div>
+              <button className="danger-button" type="button" onClick={clearCurrentMonth} disabled={data.salary === 0 && data.mealAllowance === 0 && data.expenses.length === 0 && data.planned.length === 0}><Icon name="trash" size={17}/>Limpar dados deste mês</button>
+            </article>
+          </div>}
         </section>
       </motion.main>
 
-      <nav className="mobile-nav"><Link className={view === "overview" ? "active" : ""} href="/"><Icon name="grid"/><small>Resumo</small></Link><Link className={view === "expenses" ? "active" : ""} href="/gastos"><Icon name="wallet"/><small>Gastos</small></Link><button onClick={() => view === "planning" ? openPlannedModal() : setModal("expense")}><Icon name="plus"/></button><Link className={view === "planning" ? "active" : ""} href="/planejamento"><Icon name="target"/><small>Planejar</small></Link></nav>
+      <nav className="mobile-nav"><Link className={view === "overview" ? "active" : ""} href="/"><Icon name="grid"/><small>Resumo</small></Link><Link className={view === "expenses" ? "active" : ""} href="/gastos"><Icon name="wallet"/><small>Gastos</small></Link><button onClick={() => view === "planning" ? openPlannedModal() : setModal("expense")}><Icon name="plus"/></button><Link className={view === "planning" ? "active" : ""} href="/planejamento"><Icon name="target"/><small>Planejar</small></Link><Link className={view === "settings" ? "active" : ""} href="/configuracoes"><Icon name="settings"/><small>Ajustes</small></Link></nav>
 
       {modal === "salary" && <Modal title="Qual é o seu salário?" subtitle="Este valor será usado como base apenas neste mês." onClose={() => setModal(null)}><form onSubmit={saveSalary}><label>Salário líquido<input name="salary" type="number" min="0" step="0.01" defaultValue={data.salary || ""} placeholder="R$ 0,00" autoFocus required/></label><button className="primary-button" type="submit">Salvar salário</button></form></Modal>}
       {modal === "meal" && <Modal title="Vale-alimentação" subtitle="Informe o saldo recebido neste mês. Ele será controlado separadamente do salário." onClose={() => setModal(null)}><form onSubmit={saveMealAllowance}><label>Valor recebido<input name="mealAllowance" type="number" min="0" step="0.01" defaultValue={mealAllowance || ""} placeholder="R$ 0,00" autoFocus required/></label><button className="primary-button" type="submit">Salvar vale-alimentação</button></form></Modal>}
