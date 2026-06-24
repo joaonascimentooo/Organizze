@@ -134,8 +134,12 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
   const salarySpent = useMemo(() => data.expenses.filter((item) => item.source !== "meal").reduce((total, item) => total + item.amount, 0), [data.expenses]);
   const mealSpent = useMemo(() => data.expenses.filter((item) => item.source === "meal").reduce((total, item) => total + item.amount, 0), [data.expenses]);
   const planned = useMemo(() => data.planned.reduce((total, item) => total + item.amount, 0), [data.planned]);
-  const plannedThisMonth = useMemo(() => data.planned.filter((item) => item.timing !== "future").reduce((total, item) => total + item.amount, 0), [data.planned]);
-  const plannedForFuture = planned - plannedThisMonth;
+  const plannedThisMonth = useMemo(() => data.planned
+    .filter((item) => item.timing !== "future")
+    .reduce((total, item) => total + (item.amount / Math.max(item.installments || 1, 1)), 0), [data.planned]);
+  const plannedForFuture = useMemo(() => data.planned
+    .filter((item) => item.timing === "future")
+    .reduce((total, item) => total + item.amount, 0), [data.planned]);
   const mealAllowance = data.mealAllowance ?? 0;
   const mealAvailable = mealAllowance - mealSpent;
   const available = data.salary - salarySpent - plannedThisMonth;
@@ -303,7 +307,15 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
   }
 
   function makePurchase(item: PlannedPurchase) {
-    const expense: Expense = { id: crypto.randomUUID(), description: item.description, amount: item.amount, category: item.category, date: new Date().toISOString().slice(0, 10) };
+    const installments = Math.max(item.installments || 1, 1);
+    const expense: Expense = {
+      id: crypto.randomUUID(),
+      description: installments > 1 ? `${item.description} · parcela 1/${installments}` : item.description,
+      amount: item.amount / installments,
+      category: item.category,
+      date: new Date().toISOString().slice(0, 10),
+      source: "salary",
+    };
     update((current) => ({ ...current, planned: current.planned.filter((entry) => entry.id !== item.id), expenses: [expense, ...current.expenses] }));
     void deleteProductImage(user?.uid ?? null, item.imageId);
   }
@@ -389,7 +401,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
           </article>}
           <article className="summary-card">
             <div className="card-heading"><span className="card-icon purple"><Icon name="cart"/></span><span>Compras planejadas</span></div>
-            <strong>{money.format(planned)}</strong><small>{plannedForFuture > 0 ? `${money.format(plannedThisMonth)} reservados neste mês` : `${data.planned.length} ${data.planned.length === 1 ? "item reservado" : "itens reservados"}`}</small>
+            <strong>{money.format(plannedThisMonth)}</strong><small>{planned > 0 ? `${money.format(planned)} em compras no total` : "Nenhum valor reservado neste mês"}</small>
           </article>
           </>}
           {view === "expenses" && <article className="summary-card expense-total-card">
@@ -480,7 +492,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
                     <h3>{item.description}</h3>
                     <strong className="product-price">{money.format(item.amount)}</strong>
                     <div className="installment-box"><span>{installments}x</span><div><strong>{money.format(item.amount / installments)}</strong><small>{installments === 1 ? "pagamento à vista" : `por ${installments} meses`}</small></div></div>
-                    <button className={`timing-toggle ${item.timing === "future" ? "is-future" : ""}`} onClick={() => togglePlanningTiming(item)}><Icon name={item.timing === "future" ? "target" : "wallet"} size={17}/><span><strong>{item.timing === "future" ? "Não desconta do saldo" : "Reservado no saldo atual"}</strong><small>{item.timing === "future" ? "Clique para trazer para este mês" : "Clique para marcar como compra futura"}</small></span></button>
+                    <button className={`timing-toggle ${item.timing === "future" ? "is-future" : ""}`} onClick={() => togglePlanningTiming(item)}><Icon name={item.timing === "future" ? "target" : "wallet"} size={17}/><span><strong>{item.timing === "future" ? "Não desconta do saldo" : `${money.format(item.amount / installments)} neste mês`}</strong><small>{item.timing === "future" ? "Clique para trazer para este mês" : "Somente a parcela atual fica reservada"}</small></span></button>
                     <div className="product-actions">
                       {productUrl && <a href={productUrl} target="_blank" rel="noopener noreferrer">Ver na loja</a>}
                       <button className="buy-button" title="Marcar como comprado" onClick={() => makePurchase(item)}><Icon name="check" size={16}/><span>Comprei</span></button>
@@ -508,7 +520,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
         {(manualImagePreview || productPreview.imageUrl || productPreview.message) && <div className={`product-form-preview ${manualImagePreview || productPreview.imageUrl ? "with-image" : ""}`}><span style={manualImagePreview || productPreview.imageUrl ? { backgroundImage: `url(${JSON.stringify(manualImagePreview || productPreview.imageUrl)})` } : undefined}>{!manualImagePreview && !productPreview.imageUrl && <Icon name="cart"/>}</span><div><strong>{manualImagePreview ? "Sua imagem está pronta" : productPreview.imageUrl ? "Prévia encontrada" : "Sem imagem automática"}</strong><small>{manualImagePreview ? productImage?.name : productPreview.message}</small></div></div>}
         <label>Nome do produto<input name="description" value={productName} onChange={(event) => setProductName(event.target.value)} placeholder="Ex.: Fone de ouvido" required/></label>
         <div className="form-row"><label>Valor total<input name="amount" type="number" min="0.01" step="0.01" value={productAmount} onChange={(event) => setProductAmount(event.target.value)} placeholder="R$ 0,00" required/></label><label>Parcelamento<select name="installments" value={productInstallments} onChange={(event) => setProductInstallments(Number(event.target.value))}>{Array.from({ length: 24 }, (_, index) => index + 1).map((number) => <option value={number} key={number}>{number === 1 ? "À vista" : `${number} parcelas`}</option>)}</select></label></div>
-        {Number(productAmount) > 0 && <div className="installment-simulation"><span>{productInstallments === 1 ? "Pagamento à vista" : `${productInstallments} parcelas de`}</span><strong>{money.format(Number(productAmount) / productInstallments)}</strong><small>{productInstallments === 1 ? "valor total da compra" : `por ${productInstallments} meses · total de ${money.format(Number(productAmount))}`}</small></div>}
+        {Number(productAmount) > 0 && <div className="installment-simulation"><span>{productInstallments === 1 ? "Pagamento à vista" : `${productInstallments} parcelas de`}</span><strong>{money.format(Number(productAmount) / productInstallments)}</strong><small>{productInstallments === 1 ? "valor debitado deste mês" : `somente esta parcela será debitada neste mês · total de ${money.format(Number(productAmount))}`}</small></div>}
         <label>Quando você pretende comprar?<select name="timing" defaultValue="current"><option value="current">Neste mês — descontar do saldo</option><option value="future">No futuro — não descontar agora</option></select></label>
         {planError && <div className="form-error">{planError}</div>}
         <CategorySelect/><button className="primary-button" type="submit" disabled={savingPlan}>{savingPlan ? "Salvando imagem..." : "Adicionar ao planejamento"}</button>
