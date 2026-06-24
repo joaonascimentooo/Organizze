@@ -141,7 +141,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
   const [planError, setPlanError] = useState("");
   const [storedProductImages, setStoredProductImages] = useState<Record<string, string>>({});
   const [productPreview, setProductPreview] = useState<{ imageUrl: string; loading: boolean; message: string }>({ imageUrl: "", loading: false, message: "" });
-  const { data, futurePlanned, update, updateFuturePlanned, addExpensesToMonths, loading, cloudEnabled, user, authReady, authError, signInWithGoogle, signOut } = useFinances(month);
+  const { data, futurePlanned, recurringSalary, recurringMealAllowance, update, updateFuturePlanned, updateRecurringIncome, addExpensesToMonths, loading, cloudEnabled, user, authReady, authError, signInWithGoogle, signOut } = useFinances(month);
   const plannedPurchases = useMemo(() => {
     const currentIds = new Set(data.planned.map((item) => item.id));
     return [
@@ -150,6 +150,8 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
     ];
   }, [data.planned, futurePlanned, month]);
 
+  const salary = data.salaryOverride ?? (data.salary > 0 ? data.salary : recurringSalary);
+  const mealAllowance = data.mealAllowanceOverride ?? (data.mealAllowance > 0 ? data.mealAllowance : recurringMealAllowance);
   const spent = useMemo(() => data.expenses.reduce((total, item) => total + item.amount, 0), [data.expenses]);
   const salarySpent = useMemo(() => data.expenses.filter((item) => item.source !== "meal").reduce((total, item) => total + item.amount, 0), [data.expenses]);
   const mealSpent = useMemo(() => data.expenses.filter((item) => item.source === "meal").reduce((total, item) => total + item.amount, 0), [data.expenses]);
@@ -160,11 +162,10 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
   const plannedForFuture = useMemo(() => plannedPurchases
     .filter((item) => item.timing === "future")
     .reduce((total, item) => total + item.amount, 0), [plannedPurchases]);
-  const mealAllowance = data.mealAllowance ?? 0;
   const mealAvailable = mealAllowance - mealSpent;
-  const available = data.salary - salarySpent - plannedThisMonth;
-  const committedPercent = data.salary > 0 ? Math.min(((salarySpent + plannedThisMonth) / data.salary) * 100, 100) : 0;
-  const spentPercent = data.salary > 0 ? Math.min((salarySpent / data.salary) * 100, 100) : 0;
+  const available = salary - salarySpent - plannedThisMonth;
+  const committedPercent = salary > 0 ? Math.min(((salarySpent + plannedThisMonth) / salary) * 100, 100) : 0;
+  const spentPercent = salary > 0 ? Math.min((salarySpent / salary) * 100, 100) : 0;
   const expensesByCategory = useMemo(() => categories
     .map((category) => ({
       category,
@@ -214,29 +215,58 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
   function saveSalary(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    update((current) => ({ ...current, salary: Number(form.get("salary")) || 0 }));
+    const value = Number(form.get("salary")) || 0;
+    if (form.get("scope") === "month") {
+      update((current) => ({ ...current, salaryOverride: value }));
+    } else {
+      updateRecurringIncome("salary", value, month);
+      update((current) => {
+        const next = { ...current, salary: 0 };
+        delete next.salaryOverride;
+        return next;
+      });
+    }
     setModal(null);
   }
 
   function saveMealAllowance(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    update((current) => ({ ...current, mealAllowance: Number(form.get("mealAllowance")) || 0 }));
+    const value = Number(form.get("mealAllowance")) || 0;
+    if (form.get("scope") === "month") {
+      update((current) => ({ ...current, mealAllowanceOverride: value }));
+    } else {
+      updateRecurringIncome("mealAllowance", value, month);
+      update((current) => {
+        const next = { ...current, mealAllowance: 0 };
+        delete next.mealAllowanceOverride;
+        return next;
+      });
+    }
     setModal(null);
   }
 
   function saveMonthlySettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    update((current) => ({
-      ...current,
-      salary: Number(form.get("salary")) || 0,
-      mealAllowance: Number(form.get("mealAllowance")) || 0,
-    }));
+    const nextSalary = Number(form.get("salary")) || 0;
+    const nextMealAllowance = Number(form.get("mealAllowance")) || 0;
+    if (form.get("scope") === "month") {
+      update((current) => ({ ...current, salaryOverride: nextSalary, mealAllowanceOverride: nextMealAllowance }));
+      return;
+    }
+    updateRecurringIncome("salary", nextSalary, month);
+    updateRecurringIncome("mealAllowance", nextMealAllowance, month);
+    update((current) => {
+      const next = { ...current, salary: 0, mealAllowance: 0 };
+      delete next.salaryOverride;
+      delete next.mealAllowanceOverride;
+      return next;
+    });
   }
 
   function clearCurrentMonth() {
-    const confirmed = window.confirm(`Apagar salário, vale, gastos e planejamentos de ${labelMonth(month)}? Esta ação não pode ser desfeita.`);
+    const confirmed = window.confirm(`Apagar gastos, planejamentos e ajustes exclusivos de ${labelMonth(month)}? A renda recorrente continuará ativa.`);
     if (!confirmed) return;
     for (const item of data.planned) void deleteProductImage(user?.uid ?? null, item.imageId);
     update(() => emptyMonth());
@@ -455,7 +485,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
           {view !== "expenses" && <>
           <article className="summary-card salary-card">
             <div className="card-heading"><span className="card-icon lime"><Icon name="wallet"/></span><span>Salário do mês</span><button onClick={() => setModal("salary")} aria-label="Editar salário"><Icon name="pencil" size={17}/></button></div>
-            <strong>{money.format(data.salary)}</strong><small>Entrada mensal registrada</small>
+            <strong>{money.format(salary)}</strong><small>{data.salaryOverride !== undefined ? "Ajuste exclusivo deste mês" : "Valor recorrente registrado"}</small>
           </article>
           {view === "overview" && <article className={`summary-card benefit-card ${mealAvailable < 0 ? "benefit-negative" : ""}`}>
             <div className="card-heading"><span className="card-icon meal"><Icon name="meal"/></span><span>Vale-alimentação</span><button onClick={() => setModal("meal")} aria-label="Editar vale-alimentação"><Icon name="pencil" size={17}/></button></div>
@@ -495,7 +525,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
               </div>
             </div>
             <div className="budget-track"><span style={{ width: `${spentPercent}%` }}/><i style={{ left: `${committedPercent}%` }}/></div>
-            <p className="helper-text">{data.salary === 0 ? "Comece registrando seu salário para visualizar a distribuição do mês." : available >= 0 ? `Você ainda tem ${money.format(available)} livres para este mês.` : `Seu planejamento ultrapassou o salário em ${money.format(Math.abs(available))}.`}</p>
+            <p className="helper-text">{salary === 0 ? "Comece registrando seu salário para visualizar a distribuição do mês." : available >= 0 ? `Você ainda tem ${money.format(available)} livres para este mês.` : `Seu planejamento ultrapassou o salário em ${money.format(Math.abs(available))}.`}</p>
           </article>
 
           <article className="panel quick-panel">
@@ -510,7 +540,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
             <div className="panel-heading"><div><span className="eyebrow">DISTRIBUIÇÃO</span><h2>Onde seu dinheiro foi</h2></div></div>
             <div className="spending-impact">
               <div className="donut expense-donut" style={{ "--progress": `${spentPercent * 3.6}deg` } as React.CSSProperties}><div><strong>{Math.round(spentPercent)}%</strong><span>do salário</span></div></div>
-              <div><span>Você gastou</span><strong>{money.format(spent)}</strong><small>{data.salary > 0 ? `${money.format(salarySpent)} do salário${mealSpent > 0 ? ` + ${money.format(mealSpent)} do vale` : ""}` : "Cadastre seu salário para comparar"}</small></div>
+              <div><span>Você gastou</span><strong>{money.format(spent)}</strong><small>{salary > 0 ? `${money.format(salarySpent)} do salário${mealSpent > 0 ? ` + ${money.format(mealSpent)} do vale` : ""}` : "Cadastre seu salário para comparar"}</small></div>
             </div>
             {expensesByCategory.length === 0 ? <div className="chart-empty">As categorias aparecerão aqui quando você registrar um gasto.</div> : <div className="category-breakdown">
               {expensesByCategory.map((item) => {
@@ -572,13 +602,14 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
 
           {view === "settings" && <div className="settings-grid">
             <article className="panel settings-panel settings-finance-panel">
-              <div className="settings-heading"><span className="settings-icon"><Icon name="wallet"/></span><div><span className="eyebrow">VALORES MENSAIS</span><h2>Base de {labelMonth(month)}</h2><p>Esses valores são independentes para cada mês.</p></div></div>
+              <div className="settings-heading"><span className="settings-icon"><Icon name="wallet"/></span><div><span className="eyebrow">RENDA RECORRENTE</span><h2>Base de {labelMonth(month)}</h2><p>Por padrão, os valores continuam automaticamente nos próximos meses.</p></div></div>
               <form className="settings-form" key={month} onSubmit={saveMonthlySettings}>
                 <div className="settings-fields">
-                  <label>Salário líquido<input name="salary" type="number" min="0" step="0.01" defaultValue={data.salary || ""} placeholder="R$ 0,00"/></label>
-                  <label>Vale-alimentação<input name="mealAllowance" type="number" min="0" step="0.01" defaultValue={data.mealAllowance || ""} placeholder="R$ 0,00"/></label>
+                  <label>Salário líquido<input name="salary" type="number" min="0" step="0.01" defaultValue={salary || ""} placeholder="R$ 0,00"/></label>
+                  <label>Vale-alimentação<input name="mealAllowance" type="number" min="0" step="0.01" defaultValue={mealAllowance || ""} placeholder="R$ 0,00"/></label>
                 </div>
-                <button className="primary-button" type="submit">Salvar valores do mês</button>
+                <label className="settings-scope">Aplicar alteração<select name="scope" defaultValue="forward"><option value="forward">Deste mês em diante</option><option value="month">Somente neste mês</option></select></label>
+                <button className="primary-button" type="submit">Salvar valores</button>
               </form>
             </article>
 
@@ -589,9 +620,9 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
             </article>
 
             <article className="panel settings-panel settings-data-panel">
-              <div className="settings-heading"><span className="settings-icon danger"><Icon name="trash"/></span><div><span className="eyebrow">DADOS DO MÊS</span><h2>Gerenciar {labelMonth(month)}</h2><p>As compras futuras globais não serão removidas.</p></div></div>
+              <div className="settings-heading"><span className="settings-icon danger"><Icon name="trash"/></span><div><span className="eyebrow">DADOS DO MÊS</span><h2>Gerenciar {labelMonth(month)}</h2><p>A renda recorrente e as compras futuras globais não serão removidas.</p></div></div>
               <div className="month-data-summary"><div><strong>{data.expenses.length}</strong><span>gastos</span></div><div><strong>{data.planned.length}</strong><span>planos deste mês</span></div><div><strong>{futurePlanned.length}</strong><span>compras futuras</span></div></div>
-              <button className="danger-button" type="button" onClick={clearCurrentMonth} disabled={data.salary === 0 && data.mealAllowance === 0 && data.expenses.length === 0 && data.planned.length === 0}><Icon name="trash" size={17}/>Limpar dados deste mês</button>
+              <button className="danger-button" type="button" onClick={clearCurrentMonth} disabled={data.salary === 0 && data.mealAllowance === 0 && data.salaryOverride === undefined && data.mealAllowanceOverride === undefined && data.expenses.length === 0 && data.planned.length === 0}><Icon name="trash" size={17}/>Limpar dados deste mês</button>
             </article>
           </div>}
         </section>
@@ -599,8 +630,8 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
 
       <nav className="mobile-nav"><Link className={view === "overview" ? "active" : ""} href="/"><Icon name="grid"/><small>Resumo</small></Link><Link className={view === "expenses" ? "active" : ""} href="/gastos"><Icon name="wallet"/><small>Gastos</small></Link><button onClick={() => view === "planning" ? openPlannedModal() : setModal("expense")}><Icon name="plus"/></button><Link className={view === "planning" ? "active" : ""} href="/planejamento"><Icon name="target"/><small>Planejar</small></Link><Link className={view === "settings" ? "active" : ""} href="/configuracoes"><Icon name="settings"/><small>Ajustes</small></Link></nav>
 
-      {modal === "salary" && <Modal title="Qual é o seu salário?" subtitle="Este valor será usado como base apenas neste mês." onClose={() => setModal(null)}><form onSubmit={saveSalary}><label>Salário líquido<input name="salary" type="number" min="0" step="0.01" defaultValue={data.salary || ""} placeholder="R$ 0,00" autoFocus required/></label><button className="primary-button" type="submit">Salvar salário</button></form></Modal>}
-      {modal === "meal" && <Modal title="Vale-alimentação" subtitle="Informe o saldo recebido neste mês. Ele será controlado separadamente do salário." onClose={() => setModal(null)}><form onSubmit={saveMealAllowance}><label>Valor recebido<input name="mealAllowance" type="number" min="0" step="0.01" defaultValue={mealAllowance || ""} placeholder="R$ 0,00" autoFocus required/></label><button className="primary-button" type="submit">Salvar vale-alimentação</button></form></Modal>}
+      {modal === "salary" && <Modal title="Qual é o seu salário?" subtitle="O valor pode continuar nos próximos meses ou valer apenas para o mês selecionado." onClose={() => setModal(null)}><form onSubmit={saveSalary}><label>Salário líquido<input name="salary" type="number" min="0" step="0.01" defaultValue={salary || ""} placeholder="R$ 0,00" autoFocus required/></label><label>Aplicar alteração<select name="scope" defaultValue="forward"><option value="forward">Deste mês em diante</option><option value="month">Somente neste mês</option></select></label><button className="primary-button" type="submit">Salvar salário</button></form></Modal>}
+      {modal === "meal" && <Modal title="Vale-alimentação" subtitle="O valor pode continuar nos próximos meses ou valer apenas para o mês selecionado." onClose={() => setModal(null)}><form onSubmit={saveMealAllowance}><label>Valor recebido<input name="mealAllowance" type="number" min="0" step="0.01" defaultValue={mealAllowance || ""} placeholder="R$ 0,00" autoFocus required/></label><label>Aplicar alteração<select name="scope" defaultValue="forward"><option value="forward">Deste mês em diante</option><option value="month">Somente neste mês</option></select></label><button className="primary-button" type="submit">Salvar vale-alimentação</button></form></Modal>}
       {modal === "expense" && <Modal title="Registrar novo gasto" subtitle="Anote agora para não precisar lembrar depois." onClose={() => setModal(null)}><form onSubmit={addExpense}><label>Descrição<input name="description" placeholder="Ex.: Mercado da semana" autoFocus required/></label><div className="form-row"><label>Valor<input name="amount" type="number" min="0.01" step="0.01" placeholder="R$ 0,00" required/></label><label>Data<input name="date" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required/></label></div><label>Pago com<select name="source" defaultValue="salary"><option value="salary">Salário</option><option value="meal">Vale-alimentação</option></select></label><CategorySelect/><button className="primary-button" type="submit">Adicionar gasto</button></form></Modal>}
       {modal === "planned" && <Modal title="Adicionar produto" subtitle="Cole o link da loja e simule como essa compra cabe no seu orçamento." onClose={() => setModal(null)}><form onSubmit={addPlanned}>
         <div className="product-link-field"><label>Link do produto<input name="productUrl" type="url" value={productLink} onChange={(event) => { setProductLink(event.target.value); setProductPreview({ imageUrl: "", loading: false, message: "" }); }} onBlur={() => productLink && void loadProductPreview()} placeholder="https://shopee.com.br/..." autoFocus/></label><button type="button" onClick={() => void loadProductPreview()} disabled={productPreview.loading}>{productPreview.loading ? "Buscando..." : "Buscar prévia"}</button></div>

@@ -29,12 +29,24 @@ export type PlannedPurchase = {
 export type MonthData = {
   salary: number;
   mealAllowance: number;
+  salaryOverride?: number;
+  mealAllowanceOverride?: number;
   expenses: Expense[];
   planned: PlannedPurchase[];
 };
 
 export type FuturePlanningData = {
   planned: PlannedPurchase[];
+};
+
+export type IncomeChange = {
+  effectiveFrom: string;
+  value: number;
+};
+
+export type IncomePreferences = {
+  salary: IncomeChange[];
+  mealAllowance: IncomeChange[];
 };
 
 export const emptyMonth = (): MonthData => ({ salary: 0, mealAllowance: 0, expenses: [], planned: [] });
