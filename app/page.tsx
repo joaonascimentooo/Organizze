@@ -1,10 +1,11 @@
 "use client";
 
-import { FormEvent, ReactNode, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "motion/react";
 import { useFinances } from "@/hooks/use-finances";
 import { categories, Category, Expense, PlannedPurchase } from "@/lib/types";
+import { deleteProductImage, loadProductImages, optimizeProductImage, saveProductImage, validateProductImage } from "@/lib/product-images";
 
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const monthFormatter = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
@@ -24,6 +25,44 @@ function labelMonth(key: string) {
   const [year, month] = key.split("-").map(Number);
   const value = monthFormatter.format(new Date(Date.UTC(year, month - 1, 1)));
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function storeName(value?: string) {
+  if (!value) return "Produto planejado";
+  try {
+    const host = new URL(value).hostname.replace(/^www\./, "");
+    if (host.includes("shopee")) return "Shopee";
+    if (host.includes("shein")) return "Shein";
+    if (host.includes("amazon")) return "Amazon";
+    if (host.includes("mercadolivre")) return "Mercado Livre";
+    if (host.includes("magazineluiza")) return "Magalu";
+    if (host.includes("kabum")) return "KaBuM!";
+    if (host.includes("aliexpress")) return "AliExpress";
+    return host;
+  } catch {
+    return "Loja online";
+  }
+}
+
+function safeImageUrl(value?: string) {
+  if (!value) return "";
+  if (/^data:image\/(?:webp|png|jpeg);base64,/i.test(value)) return value;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+
+function safeProductUrl(value?: string) {
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : "";
+  } catch {
+    return "";
+  }
 }
 
 function Icon({ name, size = 20 }: { name: string; size?: number }) {
@@ -78,6 +117,16 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
   const [modal, setModal] = useState<"salary" | "expense" | "planned" | null>(null);
   const [expenseSort, setExpenseSort] = useState<"recent" | "highest" | "lowest">("recent");
   const [expenseCategory, setExpenseCategory] = useState<Category | "Todas">("Todas");
+  const [productLink, setProductLink] = useState("");
+  const [productName, setProductName] = useState("");
+  const [productAmount, setProductAmount] = useState("");
+  const [productInstallments, setProductInstallments] = useState(1);
+  const [productImage, setProductImage] = useState<File | null>(null);
+  const [manualImagePreview, setManualImagePreview] = useState("");
+  const [savingPlan, setSavingPlan] = useState(false);
+  const [planError, setPlanError] = useState("");
+  const [storedProductImages, setStoredProductImages] = useState<Record<string, string>>({});
+  const [productPreview, setProductPreview] = useState<{ imageUrl: string; loading: boolean; message: string }>({ imageUrl: "", loading: false, message: "" });
   const { data, update, loading, cloudEnabled, user, authReady, authError, signInWithGoogle, signOut } = useFinances(month);
 
   const spent = useMemo(() => data.expenses.reduce((total, item) => total + item.amount, 0), [data.expenses]);
@@ -103,6 +152,15 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
       return b.date.localeCompare(a.date);
     });
   }, [data.expenses, expenseCategory, expenseSort]);
+
+  useEffect(() => {
+    const imageIds = data.planned.flatMap((item) => item.imageId ? [item.imageId] : []);
+    let cancelled = false;
+    void loadProductImages(user?.uid ?? null, imageIds).then((images) => {
+      if (!cancelled) setStoredProductImages(images);
+    });
+    return () => { cancelled = true; };
+  }, [data.planned, user?.uid]);
   const pageHeading = {
     overview: { eyebrow: "PAINEL FINANCEIRO", title: "Olá, vamos organizar?", description: "Seu dinheiro fica mais leve quando cada real tem um lugar." },
     expenses: { eyebrow: "MEUS GASTOS", title: "Tudo o que saiu, em um só lugar", description: "Acompanhe cada gasto do mês e mantenha seu saldo sob controle." },
@@ -130,23 +188,101 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
     setModal(null);
   }
 
-  function addPlanned(event: FormEvent<HTMLFormElement>) {
+  async function addPlanned(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const productId = crypto.randomUUID();
+    setSavingPlan(true);
+    setPlanError("");
+    let imageUrl = productPreview.imageUrl || undefined;
+    let imageId: string | undefined;
+
+    try {
+      if (productImage) {
+        const optimizedImage = await optimizeProductImage(productImage);
+        const savedImage = await saveProductImage(user?.uid ?? null, productId, optimizedImage);
+        imageId = savedImage.imageId;
+        imageUrl = undefined;
+        setStoredProductImages((current) => ({ ...current, [savedImage.imageId]: savedImage.dataUrl }));
+      }
     const item: PlannedPurchase = {
-      id: crypto.randomUUID(),
+      id: productId,
       description: String(form.get("description")),
       amount: Number(form.get("amount")),
       category: form.get("category") as Category,
       purchased: false,
+      installments: Number(form.get("installments")) || 1,
     };
+    const productUrl = safeProductUrl(String(form.get("productUrl") || ""));
+    if (productUrl) item.productUrl = productUrl;
+    if (imageUrl) item.imageUrl = imageUrl;
+    if (imageId) item.imageId = imageId;
     update((current) => ({ ...current, planned: [item, ...current.planned] }));
     setModal(null);
+    } catch (error) {
+      setPlanError(error instanceof Error ? error.message : "Não foi possível salvar a imagem.");
+    } finally {
+      setSavingPlan(false);
+    }
+  }
+
+  function openPlannedModal() {
+    setProductLink("");
+    setProductName("");
+    setProductAmount("");
+    setProductInstallments(1);
+    setProductImage(null);
+    setManualImagePreview("");
+    setPlanError("");
+    setProductPreview({ imageUrl: "", loading: false, message: "" });
+    setModal("planned");
+  }
+
+  async function loadProductPreview() {
+    const link = productLink.trim();
+    if (!link) {
+      setProductPreview({ imageUrl: "", loading: false, message: "Cole o link do produto primeiro." });
+      return;
+    }
+    setProductPreview((current) => ({ ...current, loading: true, message: "" }));
+    try {
+      const response = await fetch(`/api/product-preview?url=${encodeURIComponent(link)}`);
+      const result = await response.json() as { title?: string; imageUrl?: string; productUrl?: string; error?: string };
+      if (!response.ok) throw new Error(result.error || "Não foi possível carregar a prévia.");
+      if (result.productUrl) setProductLink(result.productUrl);
+      if (result.title && !productName) setProductName(result.title.slice(0, 120));
+      setProductPreview({ imageUrl: result.imageUrl || "", loading: false, message: result.imageUrl ? "Imagem encontrada automaticamente." : "Produto encontrado sem imagem." });
+    } catch (error) {
+      setProductPreview({ imageUrl: "", loading: false, message: error instanceof Error ? error.message : "Não foi possível carregar a prévia." });
+    }
+  }
+
+  function chooseProductImage(file?: File) {
+    if (!file) return;
+    try {
+      validateProductImage(file);
+      setPlanError("");
+      setProductImage(file);
+      const reader = new FileReader();
+      reader.onload = () => setManualImagePreview(String(reader.result));
+      reader.onerror = () => setPlanError("Não foi possível visualizar a imagem.");
+      reader.readAsDataURL(file);
+    } catch (error) {
+      setProductImage(null);
+      setManualImagePreview("");
+      setPlanError(error instanceof Error ? error.message : "Imagem inválida.");
+    }
   }
 
   function makePurchase(item: PlannedPurchase) {
     const expense: Expense = { id: crypto.randomUUID(), description: item.description, amount: item.amount, category: item.category, date: new Date().toISOString().slice(0, 10) };
     update((current) => ({ ...current, planned: current.planned.filter((entry) => entry.id !== item.id), expenses: [expense, ...current.expenses] }));
+    void deleteProductImage(user?.uid ?? null, item.imageId);
+  }
+
+  function removePlanned(item: PlannedPurchase) {
+    update((current) => ({ ...current, planned: current.planned.filter((entry) => entry.id !== item.id) }));
+    void deleteProductImage(user?.uid ?? null, item.imageId);
   }
 
   const userName = user?.displayName?.split(" ")[0] || "Você";
@@ -200,16 +336,16 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
 
         {!cloudEnabled && <div className="local-banner"><span>Modo local</span> Seus dados já estão sendo salvos neste dispositivo. Adicione as credenciais do Firebase para sincronizá-los na nuvem.</div>}
 
-        <section className={`summary-grid ${view === "expenses" ? "expense-summary" : ""} ${loading ? "is-loading" : ""}`} id="inicio">
+        <section className={`summary-grid ${view === "expenses" ? "expense-summary" : view === "planning" ? "planning-summary" : ""} ${loading ? "is-loading" : ""}`} id="inicio">
           {view !== "expenses" && <>
           <article className="summary-card salary-card">
             <div className="card-heading"><span className="card-icon lime"><Icon name="wallet"/></span><span>Salário do mês</span><button onClick={() => setModal("salary")} aria-label="Editar salário"><Icon name="pencil" size={17}/></button></div>
             <strong>{money.format(data.salary)}</strong><small>Entrada mensal registrada</small>
           </article>
-          <article className="summary-card">
+          {view === "overview" && <article className="summary-card">
             <div className="card-heading"><span className="card-icon coral"><Icon name="arrowUp"/></span><span>Gastos realizados</span></div>
             <strong>{money.format(spent)}</strong><small>{data.expenses.length} {data.expenses.length === 1 ? "lançamento" : "lançamentos"}</small>
-          </article>
+          </article>}
           <article className="summary-card">
             <div className="card-heading"><span className="card-icon purple"><Icon name="cart"/></span><span>Compras planejadas</span></div>
             <strong>{money.format(planned)}</strong><small>{data.planned.length} {data.planned.length === 1 ? "item reservado" : "itens reservados"}</small>
@@ -244,7 +380,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
           <article className="panel quick-panel">
             <span className="eyebrow">ATALHOS</span><h2>O que vamos anotar?</h2>
             <button className="quick-action" onClick={() => setModal("expense")}><span className="card-icon coral"><Icon name="plus"/></span><span><strong>Novo gasto</strong><small>Registre o que já saiu</small></span><Icon name="chevronRight"/></button>
-            <button className="quick-action" onClick={() => setModal("planned")}><span className="card-icon purple"><Icon name="cart"/></span><span><strong>Planejar compra</strong><small>Reserve antes de gastar</small></span><Icon name="chevronRight"/></button>
+            <button className="quick-action" onClick={openPlannedModal}><span className="card-icon purple"><Icon name="cart"/></span><span><strong>Planejar compra</strong><small>Reserve antes de gastar</small></span><Icon name="chevronRight"/></button>
           </article>
           </>}
 
@@ -282,20 +418,54 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
           </article>
           </>}
 
-          {view === "planning" && <article className="panel list-panel focused-list" id="planejados">
-            <div className="panel-heading"><div><span className="eyebrow">PRÓXIMAS COMPRAS</span><h2>Lista de desejos do mês</h2></div><button className="text-button" onClick={() => setModal("planned")}><Icon name="plus" size={17}/>Adicionar</button></div>
-            {data.planned.length === 0 ? <Empty icon="target" title="Tudo livre por enquanto" text="Planeje uma compra para saber quanto sobrará antes de decidir." action="Planejar uma compra" onClick={() => setModal("planned")}/> :
-              <div className="item-list">{data.planned.map((item) => <div className="list-item planned-item" key={item.id}><span className={`category-icon cat-${categories.indexOf(item.category)}`}><Icon name="cart" size={18}/></span><div><strong>{item.description}</strong><small>{item.category}</small></div><b>{money.format(item.amount)}</b><button className="buy-button" title="Marcar como comprado" onClick={() => makePurchase(item)}><Icon name="check" size={16}/><span>Comprei</span></button><button className="icon-button" aria-label="Excluir planejamento" onClick={() => update((current) => ({ ...current, planned: current.planned.filter((entry) => entry.id !== item.id) }))}><Icon name="trash" size={17}/></button></div>)}</div>}
+          {view === "planning" && <article className="panel planning-panel" id="planejados">
+            <div className="panel-heading"><div><span className="eyebrow">LISTA DE DESEJOS</span><h2>O que você quer comprar</h2></div><button className="text-button add-plan-button" onClick={openPlannedModal}><Icon name="plus" size={18}/>Adicionar produto</button></div>
+            <p className="planning-intro">Compare o impacto no orçamento antes de decidir. O valor parcelado é calculado automaticamente.</p>
+            {data.planned.length === 0 ? <Empty icon="target" title="Sua lista está esperando uma ideia" text="Cole o link de um produto para visualizar preço, imagem e parcelamento em um só lugar." action="Adicionar primeiro produto" onClick={openPlannedModal}/> :
+              <div className="product-grid">{data.planned.map((item) => {
+                const installments = Math.max(item.installments || 1, 1);
+                const image = safeImageUrl((item.imageId && storedProductImages[item.imageId]) || item.imageUrl);
+                const productUrl = safeProductUrl(item.productUrl);
+                return <article className="product-card" key={item.id}>
+                  <div className={`product-media ${image ? "has-image" : ""}`} style={image ? { backgroundImage: `url(${JSON.stringify(image)})` } : undefined}>
+                    {!image && <span><Icon name="cart" size={30}/><small>Prévia indisponível</small></span>}
+                    <b>{storeName(productUrl)}</b>
+                  </div>
+                  <div className="product-details">
+                    <span className="product-category">{item.category}</span>
+                    <h3>{item.description}</h3>
+                    <strong className="product-price">{money.format(item.amount)}</strong>
+                    <div className="installment-box"><span>{installments}x</span><div><strong>{money.format(item.amount / installments)}</strong><small>{installments === 1 ? "pagamento à vista" : `por ${installments} meses`}</small></div></div>
+                    <div className="product-actions">
+                      {productUrl && <a href={productUrl} target="_blank" rel="noopener noreferrer">Ver na loja</a>}
+                      <button className="buy-button" title="Marcar como comprado" onClick={() => makePurchase(item)}><Icon name="check" size={16}/><span>Comprei</span></button>
+                      <button className="icon-button" aria-label="Excluir planejamento" onClick={() => removePlanned(item)}><Icon name="trash" size={17}/></button>
+                    </div>
+                  </div>
+                </article>;
+              })}</div>}
           </article>
           }
         </section>
       </motion.main>
 
-      <nav className="mobile-nav"><Link className={view === "overview" ? "active" : ""} href="/"><Icon name="grid"/><small>Resumo</small></Link><Link className={view === "expenses" ? "active" : ""} href="/gastos"><Icon name="wallet"/><small>Gastos</small></Link><button onClick={() => setModal(view === "planning" ? "planned" : "expense")}><Icon name="plus"/></button><Link className={view === "planning" ? "active" : ""} href="/planejamento"><Icon name="target"/><small>Planejar</small></Link></nav>
+      <nav className="mobile-nav"><Link className={view === "overview" ? "active" : ""} href="/"><Icon name="grid"/><small>Resumo</small></Link><Link className={view === "expenses" ? "active" : ""} href="/gastos"><Icon name="wallet"/><small>Gastos</small></Link><button onClick={() => view === "planning" ? openPlannedModal() : setModal("expense")}><Icon name="plus"/></button><Link className={view === "planning" ? "active" : ""} href="/planejamento"><Icon name="target"/><small>Planejar</small></Link></nav>
 
       {modal === "salary" && <Modal title="Qual é o seu salário?" subtitle="Este valor será usado como base apenas neste mês." onClose={() => setModal(null)}><form onSubmit={saveSalary}><label>Salário líquido<input name="salary" type="number" min="0" step="0.01" defaultValue={data.salary || ""} placeholder="R$ 0,00" autoFocus required/></label><button className="primary-button" type="submit">Salvar salário</button></form></Modal>}
       {modal === "expense" && <Modal title="Registrar novo gasto" subtitle="Anote agora para não precisar lembrar depois." onClose={() => setModal(null)}><form onSubmit={addExpense}><label>Descrição<input name="description" placeholder="Ex.: Mercado da semana" autoFocus required/></label><div className="form-row"><label>Valor<input name="amount" type="number" min="0.01" step="0.01" placeholder="R$ 0,00" required/></label><label>Data<input name="date" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required/></label></div><CategorySelect/><button className="primary-button" type="submit">Adicionar gasto</button></form></Modal>}
-      {modal === "planned" && <Modal title="Planejar uma compra" subtitle="Veja o impacto no salário antes de colocar no carrinho." onClose={() => setModal(null)}><form onSubmit={addPlanned}><label>O que você quer comprar?<input name="description" placeholder="Ex.: Fone de ouvido" autoFocus required/></label><label>Valor estimado<input name="amount" type="number" min="0.01" step="0.01" placeholder="R$ 0,00" required/></label><CategorySelect/><button className="primary-button" type="submit">Reservar no orçamento</button></form></Modal>}
+      {modal === "planned" && <Modal title="Adicionar produto" subtitle="Cole o link da loja e simule como essa compra cabe no seu orçamento." onClose={() => setModal(null)}><form onSubmit={addPlanned}>
+        <div className="product-link-field"><label>Link do produto<input name="productUrl" type="url" value={productLink} onChange={(event) => { setProductLink(event.target.value); setProductPreview({ imageUrl: "", loading: false, message: "" }); }} onBlur={() => productLink && void loadProductPreview()} placeholder="https://shopee.com.br/..." autoFocus/></label><button type="button" onClick={() => void loadProductPreview()} disabled={productPreview.loading}>{productPreview.loading ? "Buscando..." : "Buscar prévia"}</button></div>
+        <div className="product-image-options">
+          <label className="image-upload-button"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => chooseProductImage(event.target.files?.[0])}/><span><Icon name="plus" size={17}/><strong>Escolher uma imagem</strong><small>JPG, PNG ou WebP · até 10 MB</small></span></label>
+          <small>A imagem escolhida por você substitui a prévia automática.</small>
+        </div>
+        {(manualImagePreview || productPreview.imageUrl || productPreview.message) && <div className={`product-form-preview ${manualImagePreview || productPreview.imageUrl ? "with-image" : ""}`}><span style={manualImagePreview || productPreview.imageUrl ? { backgroundImage: `url(${JSON.stringify(manualImagePreview || productPreview.imageUrl)})` } : undefined}>{!manualImagePreview && !productPreview.imageUrl && <Icon name="cart"/>}</span><div><strong>{manualImagePreview ? "Sua imagem está pronta" : productPreview.imageUrl ? "Prévia encontrada" : "Sem imagem automática"}</strong><small>{manualImagePreview ? productImage?.name : productPreview.message}</small></div></div>}
+        <label>Nome do produto<input name="description" value={productName} onChange={(event) => setProductName(event.target.value)} placeholder="Ex.: Fone de ouvido" required/></label>
+        <div className="form-row"><label>Valor total<input name="amount" type="number" min="0.01" step="0.01" value={productAmount} onChange={(event) => setProductAmount(event.target.value)} placeholder="R$ 0,00" required/></label><label>Parcelamento<select name="installments" value={productInstallments} onChange={(event) => setProductInstallments(Number(event.target.value))}>{Array.from({ length: 24 }, (_, index) => index + 1).map((number) => <option value={number} key={number}>{number === 1 ? "À vista" : `${number} parcelas`}</option>)}</select></label></div>
+        {Number(productAmount) > 0 && <div className="installment-simulation"><span>{productInstallments === 1 ? "Pagamento à vista" : `${productInstallments} parcelas de`}</span><strong>{money.format(Number(productAmount) / productInstallments)}</strong><small>{productInstallments === 1 ? "valor total da compra" : `por ${productInstallments} meses · total de ${money.format(Number(productAmount))}`}</small></div>}
+        {planError && <div className="form-error">{planError}</div>}
+        <CategorySelect/><button className="primary-button" type="submit" disabled={savingPlan}>{savingPlan ? "Salvando imagem..." : "Adicionar ao planejamento"}</button>
+      </form></Modal>}
     </div>
   );
 }

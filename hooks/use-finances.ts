@@ -15,6 +15,10 @@ import { emptyMonth, MonthData } from "@/lib/types";
 
 const localKey = (month: string) => `organizze:${month}`;
 
+function firestoreSafe(data: MonthData): MonthData {
+  return JSON.parse(JSON.stringify(data)) as MonthData;
+}
+
 export function useFinances(month: string) {
   const [data, setData] = useState<MonthData>(emptyMonth());
   const [loading, setLoading] = useState(true);
@@ -59,7 +63,7 @@ export function useFinances(month: string) {
       const next = recipe(current);
       if (!hasFirebaseConfig) localStorage.setItem(localKey(month), JSON.stringify(next));
       if (hasFirebaseConfig && user && db) {
-        void setDoc(doc(db, "users", user.uid, "months", month), next);
+        void setDoc(doc(db, "users", user.uid, "months", month), firestoreSafe(next));
       }
       return next;
     });

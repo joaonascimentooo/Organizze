@@ -14,6 +14,10 @@ export type PlannedPurchase = {
   amount: number;
   category: Category;
   purchased: boolean;
+  productUrl?: string;
+  imageUrl?: string;
+  imageId?: string;
+  installments?: number;
 };
 
 export type MonthData = {

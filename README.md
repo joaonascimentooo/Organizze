@@ -63,7 +63,7 @@ A aplicação estará disponível em `http://localhost:3000`.
 
 ## Configuração do Firebase
 
-No Firebase Authentication, habilite o provedor **Google**. No Cloud Firestore, publique as regras presentes em [`firebase.rules`](./firebase.rules). Elas garantem que cada usuário tenha acesso apenas aos próprios dados.
+No Firebase Authentication, habilite o provedor **Google**. No Cloud Firestore, publique as regras presentes em [`firebase.rules`](./firebase.rules). Elas garantem que cada usuário tenha acesso apenas aos próprios dados e às miniaturas dos seus produtos. Não é necessário ativar o Firebase Storage: imagens escolhidas pelo usuário são compactadas e guardadas em documentos separados no Firestore.
 
 Os documentos são organizados pelo caminho:
 
