@@ -1,44 +1,98 @@
 # Organizze
 
-Painel financeiro mensal feito com Next.js, React, TypeScript e Firebase. Ele registra salário, gastos e compras planejadas, calcula automaticamente o saldo livre e mantém cada mês separado.
+Aplicação web de finanças pessoais para acompanhar salário, gastos e compras planejadas mês a mês. O Organizze transforma essas informações em uma visão simples do orçamento, mostrando quanto já foi gasto, quanto está reservado e qual é o saldo realmente livre.
 
-## Rodar no computador
+## Funcionalidades
+
+- Dashboard mensal com resumo completo do orçamento
+- Registro do salário de cada mês
+- Cadastro e exclusão de gastos por categoria e data
+- Planejamento de compras antes de comprometer o salário
+- Conversão de uma compra planejada em gasto realizado
+- Cálculo automático do saldo disponível
+- Navegação independente entre dashboard, gastos e planejamento
+- Login com conta Google
+- Sincronização em tempo real com o Cloud Firestore
+- Interface responsiva para computador e celular
+
+## Tecnologias
+
+- [Next.js](https://nextjs.org/) 16
+- [React](https://react.dev/) 19
+- [TypeScript](https://www.typescriptlang.org/)
+- [Firebase Authentication](https://firebase.google.com/docs/auth)
+- [Cloud Firestore](https://firebase.google.com/docs/firestore)
+- [Motion](https://motion.dev/)
+
+## Páginas
+
+| Rota | Descrição |
+| --- | --- |
+| `/` | Dashboard e visão geral do mês |
+| `/gastos` | Histórico completo de gastos |
+| `/planejamento` | Compras e valores planejados |
+
+## Executando localmente
+
+Requisitos: Node.js 22 e npm.
 
 ```bash
-npm install
+git clone https://github.com/joaonascimentooo/Organizze.git
+cd Organizze
+npm ci
+```
+
+Copie `.env.example` para `.env.local` e preencha as configurações do seu aplicativo Web no Firebase:
+
+```env
+NEXT_PUBLIC_FIREBASE_API_KEY=
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
+NEXT_PUBLIC_FIREBASE_APP_ID=
+```
+
+Depois, inicie o ambiente de desenvolvimento:
+
+```bash
 npm run dev
 ```
 
-Abra `http://localhost:3000`. Sem configuração adicional, os dados ficam salvos no navegador.
+A aplicação estará disponível em `http://localhost:3000`.
 
-## Conectar ao Firebase
+## Configuração do Firebase
 
-1. Crie um projeto no [Firebase Console](https://console.firebase.google.com/).
-2. Adicione um aplicativo Web ao projeto.
-3. Em **Authentication > Sign-in method**, habilite o provedor **Google** e escolha um e-mail de suporte.
-4. Crie um banco em **Firestore Database**.
-5. Copie `.env.example` para `.env.local` e preencha as credenciais do aplicativo Web.
-6. Publique as regras presentes em `firebase.rules` no Firestore.
-7. Reinicie `npm run dev`.
+No Firebase Authentication, habilite o provedor **Google**. No Cloud Firestore, publique as regras presentes em [`firebase.rules`](./firebase.rules). Elas garantem que cada usuário tenha acesso apenas aos próprios dados.
 
-Com o Firebase conectado, os dados são guardados em `users/{uid}/months/{ano-mês}` e vinculados à conta Google. Assim, o mesmo painel pode ser acessado em dispositivos diferentes. Se já existia uma sessão anônima da versão anterior, o primeiro login com Google vincula a conta e preserva seu identificador e seus dados.
+Os documentos são organizados pelo caminho:
 
-## Comandos
+```text
+users/{userId}/months/{ano-mês}
+```
 
-- `npm run dev`: servidor de desenvolvimento
-- `npm run build`: compilação de produção
-- `npm run lint`: validação de qualidade do código
-- `npm run typecheck`: validação do TypeScript
-- `npm run check`: executa todas as validações usadas antes do deploy
+Sem as variáveis do Firebase, a aplicação funciona em modo local e mantém os dados apenas no navegador.
 
-## Publicar na Vercel
+## Scripts
 
-1. Importe o repositório GitHub no painel da Vercel.
-2. Mantenha o preset **Next.js** e os comandos detectados automaticamente.
-3. Em **Settings > Environment Variables**, cadastre as seis variáveis listadas em `.env.example` para os ambientes desejados.
-4. Faça o primeiro deploy e copie o domínio final fornecido pela Vercel.
-5. No Firebase, abra **Authentication > Settings > Authorized domains** e adicione somente o domínio, sem `https://` e sem caminho.
+```bash
+npm run dev        # Servidor de desenvolvimento
+npm run lint       # Análise estática
+npm run typecheck  # Validação do TypeScript
+npm run build      # Build de produção
+npm run check      # Executa todas as validações acima
+```
 
-O arquivo `.env.local` nunca deve ser enviado ao GitHub. As variáveis `NEXT_PUBLIC_*` do Firebase são incorporadas ao aplicativo Web durante o build; a segurança dos dados depende do login e das regras do Firestore presentes em `firebase.rules`.
+## Estrutura principal
 
-Os previews da Vercel recebem domínios diferentes. Para testar login Google em um preview, esse domínio específico também precisa estar autorizado no Firebase.
+```text
+app/                 Páginas, layout e estilos
+hooks/               Estado financeiro e sincronização
+lib/                 Firebase, tipos e utilitários
+.github/workflows/   Validação automática no GitHub
+firebase.rules       Regras de segurança do Firestore
+```
+
+## Segurança
+
+O arquivo `.env.local` é ignorado pelo Git e nunca deve ser versionado. As regras do Firestore validam a identidade autenticada antes de permitir qualquer leitura ou gravação.
