@@ -27,6 +27,19 @@ function labelMonth(key: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+function installmentDate(key: string, preferredDay: number) {
+  const [year, month] = key.split("-").map(Number);
+  const lastDay = new Date(year, month, 0).getDate();
+  return `${key}-${String(Math.min(preferredDay, lastDay)).padStart(2, "0")}`;
+}
+
+function installmentAmounts(total: number, count: number) {
+  const totalInCents = Math.round(total * 100);
+  const base = Math.floor(totalInCents / count);
+  const remainder = totalInCents % count;
+  return Array.from({ length: count }, (_, index) => (base + (index < remainder ? 1 : 0)) / 100);
+}
+
 function storeName(value?: string) {
   if (!value) return "Produto planejado";
   try {
@@ -128,7 +141,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
   const [planError, setPlanError] = useState("");
   const [storedProductImages, setStoredProductImages] = useState<Record<string, string>>({});
   const [productPreview, setProductPreview] = useState<{ imageUrl: string; loading: boolean; message: string }>({ imageUrl: "", loading: false, message: "" });
-  const { data, futurePlanned, update, updateFuturePlanned, loading, cloudEnabled, user, authReady, authError, signInWithGoogle, signOut } = useFinances(month);
+  const { data, futurePlanned, update, updateFuturePlanned, addExpensesToMonths, loading, cloudEnabled, user, authReady, authError, signInWithGoogle, signOut } = useFinances(month);
   const plannedPurchases = useMemo(() => {
     const currentIds = new Set(data.planned.map((item) => item.id));
     return [
@@ -320,15 +333,33 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
 
   function makePurchase(item: PlannedPurchase) {
     const installments = Math.max(item.installments || 1, 1);
-    const expense: Expense = {
-      id: crypto.randomUUID(),
-      description: installments > 1 ? `${item.description} · parcela 1/${installments}` : item.description,
-      amount: item.amount / installments,
-      category: item.category,
-      date: new Date().toISOString().slice(0, 10),
-      source: "salary",
-    };
-    update((current) => ({ ...current, planned: current.planned.filter((entry) => entry.id !== item.id), expenses: [expense, ...current.expenses] }));
+    const preferredDay = new Date().getDate();
+    const expenses = installmentAmounts(item.amount, installments).map((amount, index) => {
+      const installmentMonth = shiftMonth(month, index);
+      return {
+        month: installmentMonth,
+        expense: {
+          id: `${item.id}:installment:${index + 1}`,
+          description: installments > 1 ? `${item.description} · parcela ${index + 1}/${installments}` : item.description,
+          amount,
+          category: item.category,
+          date: installmentDate(installmentMonth, preferredDay),
+          source: "salary" as const,
+          purchaseId: item.id,
+          installmentNumber: index + 1,
+          installmentCount: installments,
+        },
+      };
+    });
+    const firstExpense = expenses[0].expense;
+    update((current) => ({
+      ...current,
+      planned: current.planned.filter((entry) => entry.id !== item.id),
+      expenses: current.expenses.some((expense) => expense.id === firstExpense.id)
+        ? current.expenses
+        : [firstExpense, ...current.expenses],
+    }));
+    addExpensesToMonths(expenses.slice(1));
     void deleteProductImage(user?.uid ?? null, item.imageId);
   }
 
@@ -508,7 +539,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
                     <span className="product-category">{item.category}</span>
                     <h3>{item.description}</h3>
                     <strong className="product-price">{money.format(item.amount)}</strong>
-                    <div className="installment-box"><span>{installments}x</span><div><strong>{money.format(item.amount / installments)}</strong><small>{installments === 1 ? "pagamento à vista" : `por ${installments} meses`}</small></div></div>
+                    <div className="installment-box"><span>{installments}x</span><div><strong>{money.format(item.amount / installments)}</strong><small>{installments === 1 ? "pagamento à vista" : `por ${installments} meses · até ${labelMonth(shiftMonth(month, installments - 1))}`}</small></div></div>
                     <button className={`timing-toggle ${item.timing === "future" ? "is-future" : ""}`} onClick={() => togglePlanningTiming(item)}><Icon name={item.timing === "future" ? "target" : "wallet"} size={17}/><span><strong>{item.timing === "future" ? "Não desconta do saldo" : `${money.format(item.amount / installments)} neste mês`}</strong><small>{item.timing === "future" ? "Clique para trazer para este mês" : "Somente a parcela atual fica reservada"}</small></span></button>
                     <div className="product-actions">
                       {productUrl && <a href={productUrl} target="_blank" rel="noopener noreferrer">Ver na loja</a>}
@@ -537,7 +568,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
         {(manualImagePreview || productPreview.imageUrl || productPreview.message) && <div className={`product-form-preview ${manualImagePreview || productPreview.imageUrl ? "with-image" : ""}`}><span style={manualImagePreview || productPreview.imageUrl ? { backgroundImage: `url(${JSON.stringify(manualImagePreview || productPreview.imageUrl)})` } : undefined}>{!manualImagePreview && !productPreview.imageUrl && <Icon name="cart"/>}</span><div><strong>{manualImagePreview ? "Sua imagem está pronta" : productPreview.imageUrl ? "Prévia encontrada" : "Sem imagem automática"}</strong><small>{manualImagePreview ? productImage?.name : productPreview.message}</small></div></div>}
         <label>Nome do produto<input name="description" value={productName} onChange={(event) => setProductName(event.target.value)} placeholder="Ex.: Fone de ouvido" required/></label>
         <div className="form-row"><label>Valor total<input name="amount" type="number" min="0.01" step="0.01" value={productAmount} onChange={(event) => setProductAmount(event.target.value)} placeholder="R$ 0,00" required/></label><label>Parcelamento<select name="installments" value={productInstallments} onChange={(event) => setProductInstallments(Number(event.target.value))}>{Array.from({ length: 24 }, (_, index) => index + 1).map((number) => <option value={number} key={number}>{number === 1 ? "À vista" : `${number} parcelas`}</option>)}</select></label></div>
-        {Number(productAmount) > 0 && <div className="installment-simulation"><span>{productInstallments === 1 ? "Pagamento à vista" : `${productInstallments} parcelas de`}</span><strong>{money.format(Number(productAmount) / productInstallments)}</strong><small>{productInstallments === 1 ? "valor debitado deste mês" : `somente esta parcela será debitada neste mês · total de ${money.format(Number(productAmount))}`}</small></div>}
+        {Number(productAmount) > 0 && <div className="installment-simulation"><span>{productInstallments === 1 ? "Pagamento à vista" : `${productInstallments} parcelas de`}</span><strong>{money.format(Number(productAmount) / productInstallments)}</strong><small>{productInstallments === 1 ? "valor debitado deste mês" : `ao clicar em Comprei, as parcelas serão lançadas até ${labelMonth(shiftMonth(month, productInstallments - 1))} · total de ${money.format(Number(productAmount))}`}</small></div>}
         <label>Quando você pretende comprar?<select name="timing" defaultValue="current"><option value="current">Neste mês — descontar do saldo</option><option value="future">No futuro — não descontar agora</option></select></label>
         {planError && <div className="form-error">{planError}</div>}
         <CategorySelect/><button className="primary-button" type="submit" disabled={savingPlan}>{savingPlan ? "Salvando imagem..." : "Adicionar ao planejamento"}</button>

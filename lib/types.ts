@@ -7,6 +7,9 @@ export type Expense = {
   category: Category;
   date: string;
   source?: "salary" | "meal";
+  purchaseId?: string;
+  installmentNumber?: number;
+  installmentCount?: number;
 };
 
 export type PlannedPurchase = {

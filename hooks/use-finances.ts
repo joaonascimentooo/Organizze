@@ -11,13 +11,22 @@ import {
 } from "firebase/auth";
 import { arrayUnion, doc, onSnapshot, setDoc } from "firebase/firestore";
 import { auth, db, hasFirebaseConfig } from "@/lib/firebase";
-import { emptyMonth, FuturePlanningData, MonthData, PlannedPurchase } from "@/lib/types";
+import { emptyMonth, Expense, FuturePlanningData, MonthData, PlannedPurchase } from "@/lib/types";
 
 const localKey = (month: string) => `organizze:${month}`;
 const localFutureKey = "organizze:planned:future";
 
 function firestoreSafe(data: MonthData): MonthData {
   return JSON.parse(JSON.stringify(data)) as MonthData;
+}
+
+function normalizeMonthData(data?: Partial<MonthData>): MonthData {
+  return {
+    salary: data?.salary ?? 0,
+    mealAllowance: data?.mealAllowance ?? 0,
+    expenses: data?.expenses ?? [],
+    planned: data?.planned ?? [],
+  };
 }
 
 export function useFinances(month: string) {
@@ -32,7 +41,7 @@ export function useFinances(month: string) {
     if (!hasFirebaseConfig || !auth || !db) {
       const timer = window.setTimeout(() => {
         const saved = localStorage.getItem(localKey(month));
-        const savedMonth = saved ? JSON.parse(saved) as MonthData : emptyMonth();
+        const savedMonth = saved ? normalizeMonthData(JSON.parse(saved) as Partial<MonthData>) : emptyMonth();
         const savedFuture = JSON.parse(localStorage.getItem(localFutureKey) || "[]") as PlannedPurchase[];
         const legacyFuture = savedMonth.planned.filter((item) => item.timing === "future");
         const nextFuture = [...savedFuture, ...legacyFuture]
@@ -68,7 +77,7 @@ export function useFinances(month: string) {
     const currentDb = db;
     const reference = doc(currentDb, "users", user.uid, "months", month);
     return onSnapshot(reference, (snapshot) => {
-      const savedMonth = snapshot.exists() ? (snapshot.data() as MonthData) : emptyMonth();
+      const savedMonth = snapshot.exists() ? normalizeMonthData(snapshot.data() as Partial<MonthData>) : emptyMonth();
       const legacyFuture = savedMonth.planned.filter((item) => item.timing === "future");
       const nextMonth = { ...savedMonth, planned: savedMonth.planned.filter((item) => item.timing !== "future") };
       setData(nextMonth);
@@ -112,6 +121,29 @@ export function useFinances(month: string) {
     });
   }, [user]);
 
+  const addExpensesToMonths = useCallback((entries: Array<{ month: string; expense: Expense }>) => {
+    if (!hasFirebaseConfig) {
+      for (const entry of entries) {
+        const key = localKey(entry.month);
+        const saved = localStorage.getItem(key);
+        const current = saved ? normalizeMonthData(JSON.parse(saved) as Partial<MonthData>) : emptyMonth();
+        if (current.expenses.some((expense) => expense.id === entry.expense.id)) continue;
+        localStorage.setItem(key, JSON.stringify({ ...current, expenses: [entry.expense, ...current.expenses] }));
+      }
+      return;
+    }
+
+    if (user && db) {
+      for (const entry of entries) {
+        void setDoc(
+          doc(db, "users", user.uid, "months", entry.month),
+          { expenses: arrayUnion(entry.expense) },
+          { merge: true },
+        );
+      }
+    }
+  }, [user]);
+
   const signInWithGoogle = useCallback(async () => {
     if (!auth) {
       setAuthError("Configure o Firebase para habilitar o login com Google.");
@@ -140,5 +172,5 @@ export function useFinances(month: string) {
     if (auth) await firebaseSignOut(auth);
   }, []);
 
-  return { data, futurePlanned, update, updateFuturePlanned, loading, cloudEnabled: hasFirebaseConfig, user, authReady, authError, signInWithGoogle, signOut };
+  return { data, futurePlanned, update, updateFuturePlanned, addExpensesToMonths, loading, cloudEnabled: hasFirebaseConfig, user, authReady, authError, signInWithGoogle, signOut };
 }
