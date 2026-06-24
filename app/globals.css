@@ -66,6 +66,7 @@ header p { margin: 0; color: var(--muted); font-size: 12px; }
 .local-banner span { color: var(--green); font-weight: 800; margin-right: 8px; }
 
 .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; transition: opacity .2s; }
+.summary-grid.overview-summary { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .summary-grid.expense-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .summary-grid.is-loading { opacity: .55; }
 .summary-card { min-width: 0; padding: 19px 18px 17px; background: white; border: 1px solid var(--line); border-radius: 17px; box-shadow: var(--shadow); }
@@ -73,12 +74,14 @@ header p { margin: 0; color: var(--muted); font-size: 12px; }
 .card-heading button { margin-left: auto; border: 0; background: transparent; color: #9aa39b; cursor: pointer; padding: 5px; }
 .card-icon { flex: 0 0 auto; width: 35px; height: 35px; display: grid; place-items: center; border-radius: 10px; color: var(--ink); }
 .card-icon.lime { background: var(--lime); }.card-icon.coral { background: #ffe4de; color: #d45743; }.card-icon.purple { background: #eee9ff; color: #735bc0; }
+.card-icon.meal { background: #fff0c9; color: #a66d13; }
 .summary-card > strong { display: block; margin-top: 13px; font-size: clamp(18px, 2vw, 23px); letter-spacing: -.8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .summary-card > small { display: block; margin-top: 3px; color: #9aa19b; font-size: 9.5px; }
 .available-card { background: var(--green); border-color: var(--green); color: white; }
 .available-card .card-heading { color: rgba(255,255,255,.68); }
 .available-card > small { color: rgba(255,255,255,.5); }
 .available-card.negative { background: #7a342d; border-color: #7a342d; }
+.benefit-card { border-color: #eadfbd; background: #fffdf7; }.benefit-card.benefit-negative { border-color: #e8b8ae; background: #fff4f1; }.benefit-card.benefit-negative > strong { color: #a84337; }
 .live-dot { margin-left: auto; color: var(--lime); font-size: 7.5px; letter-spacing: .8px; }.live-dot:before { content: ''; display: inline-block; width: 5px; height: 5px; margin-right: 5px; background: var(--lime); border-radius: 50%; }
 .expense-summary .summary-card { padding: 22px 24px; }.expense-summary .summary-card > strong { font-size: clamp(23px, 2.5vw, 30px); }.summary-percentage { margin-left: auto; padding: 5px 8px; border-radius: 20px; color: #ba5646; background: #fff0ec; font-size: 8px; font-weight: 800; }
 
@@ -98,7 +101,7 @@ header p { margin: 0; color: var(--muted); font-size: 12px; }
 .breakdown { display: grid; gap: 14px; }
 .breakdown > div { display: flex; align-items: center; justify-content: space-between; gap: 20px; font-size: 10px; }
 .breakdown > div span { display: flex; align-items: center; color: var(--muted); }.breakdown strong { font-size: 11px; }
-.dot { width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; }.dot.spent { background: var(--green); }.dot.planned { background: var(--purple); }.dot.free { background: var(--lime); border: 1px solid #b6cd69; }
+.dot { width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; }.dot.spent { background: var(--green); }.dot.meal { background: #e6a43a; }.dot.planned { background: var(--purple); }.dot.free { background: var(--lime); border: 1px solid #b6cd69; }
 .budget-track { height: 5px; background: #edf0ea; border-radius: 5px; position: relative; overflow: visible; }.budget-track span { display: block; height: 100%; max-width: 100%; border-radius: inherit; background: var(--green); }.budget-track i { position: absolute; top: -3px; width: 2px; height: 11px; background: var(--purple); }
 .helper-text { margin: 10px 0 0; color: var(--muted); font-size: 9.5px; }
 
@@ -140,10 +143,14 @@ header p { margin: 0; color: var(--muted); font-size: 12px; }
 
 @media (max-width: 1100px) {
   .summary-grid { grid-template-columns: repeat(2, 1fr); }
+  .summary-grid.overview-summary { grid-template-columns: repeat(2, 1fr); }
   .content-grid { grid-template-columns: 1fr; }
   .content-grid.expense-content { grid-template-columns: 1fr; }
   .spending-panel { min-height: 0; }
   .quick-panel { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; }.quick-panel > .eyebrow, .quick-panel > h2 { grid-column: 1 / -1; }
+}
+@media (max-width: 1400px) and (min-width: 1101px) {
+  .summary-grid.overview-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
   .sidebar { display: none; }
@@ -283,6 +290,7 @@ header p { font-size: 14px; line-height: 1.55; }
 
 /* Expense page: compact layouts must never truncate financial values. */
 @media (max-width: 560px) {
+  .summary-grid.overview-summary { grid-template-columns: 1fr; }
   .summary-grid.expense-summary { grid-template-columns: 1fr; }
   .summary-grid.expense-summary .summary-card { display: block; min-height: 142px; }
   .summary-grid.expense-summary .summary-card .card-heading { margin-bottom: 15px; }

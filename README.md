@@ -6,7 +6,9 @@ Aplicação web de finanças pessoais para acompanhar salário, gastos e compras
 
 - Dashboard mensal com resumo completo do orçamento
 - Registro do salário de cada mês
+- Controle separado do vale-alimentação
 - Cadastro e exclusão de gastos por categoria e data
+- Escolha entre salário e vale-alimentação como origem do pagamento
 - Planejamento de compras antes de comprometer o salário
 - Conversão de uma compra planejada em gasto realizado
 - Cálculo automático do saldo disponível

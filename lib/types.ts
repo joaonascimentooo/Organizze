@@ -6,6 +6,7 @@ export type Expense = {
   amount: number;
   category: Category;
   date: string;
+  source?: "salary" | "meal";
 };
 
 export type PlannedPurchase = {
@@ -22,10 +23,11 @@ export type PlannedPurchase = {
 
 export type MonthData = {
   salary: number;
+  mealAllowance: number;
   expenses: Expense[];
   planned: PlannedPurchase[];
 };
 
-export const emptyMonth = (): MonthData => ({ salary: 0, expenses: [], planned: [] });
+export const emptyMonth = (): MonthData => ({ salary: 0, mealAllowance: 0, expenses: [], planned: [] });
 
 export const categories: Category[] = ["Casa", "Alimentação", "Transporte", "Lazer", "Saúde", "Outros"];

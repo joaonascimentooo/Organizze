@@ -69,6 +69,7 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
   const paths: Record<string, ReactNode> = {
     grid: <><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></>,
     wallet: <><path d="M20 7V6a2 2 0 0 0-2-2H5a3 3 0 0 0 0 6h15v10H5a3 3 0 0 1-3-3V7"/><path d="M16 14h2"/></>,
+    meal: <><path d="M4 11h16a8 8 0 0 1-16 0Z"/><path d="M7 19h10M8 7c0-1 1-1.5 1-2.5M12 7c0-1 1-1.5 1-2.5M16 7c0-1 1-1.5 1-2.5"/></>,
     target: <><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></>,
     settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 9 19.37a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.63 15 1.7 1.7 0 0 0 3.08 14H3v-4h.08A1.7 1.7 0 0 0 4.63 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.63h.01A1.7 1.7 0 0 0 10 3.08V3h4v.08A1.7 1.7 0 0 0 15 4.63a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.37 9v.01A1.7 1.7 0 0 0 20.92 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></>,
     plus: <><path d="M12 5v14M5 12h14"/></>,
@@ -114,7 +115,7 @@ export type OrganizzeView = "overview" | "expenses" | "planning";
 export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
   const reduceMotion = useReducedMotion();
   const [month, setMonth] = useState(monthKey());
-  const [modal, setModal] = useState<"salary" | "expense" | "planned" | null>(null);
+  const [modal, setModal] = useState<"salary" | "meal" | "expense" | "planned" | null>(null);
   const [expenseSort, setExpenseSort] = useState<"recent" | "highest" | "lowest">("recent");
   const [expenseCategory, setExpenseCategory] = useState<Category | "Todas">("Todas");
   const [productLink, setProductLink] = useState("");
@@ -130,10 +131,14 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
   const { data, update, loading, cloudEnabled, user, authReady, authError, signInWithGoogle, signOut } = useFinances(month);
 
   const spent = useMemo(() => data.expenses.reduce((total, item) => total + item.amount, 0), [data.expenses]);
+  const salarySpent = useMemo(() => data.expenses.filter((item) => item.source !== "meal").reduce((total, item) => total + item.amount, 0), [data.expenses]);
+  const mealSpent = useMemo(() => data.expenses.filter((item) => item.source === "meal").reduce((total, item) => total + item.amount, 0), [data.expenses]);
   const planned = useMemo(() => data.planned.reduce((total, item) => total + item.amount, 0), [data.planned]);
-  const available = data.salary - spent - planned;
-  const committedPercent = data.salary > 0 ? Math.min(((spent + planned) / data.salary) * 100, 100) : 0;
-  const spentPercent = data.salary > 0 ? Math.min((spent / data.salary) * 100, 100) : 0;
+  const mealAllowance = data.mealAllowance ?? 0;
+  const mealAvailable = mealAllowance - mealSpent;
+  const available = data.salary - salarySpent - planned;
+  const committedPercent = data.salary > 0 ? Math.min(((salarySpent + planned) / data.salary) * 100, 100) : 0;
+  const spentPercent = data.salary > 0 ? Math.min((salarySpent / data.salary) * 100, 100) : 0;
   const expensesByCategory = useMemo(() => categories
     .map((category) => ({
       category,
@@ -186,6 +191,13 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
     setModal(null);
   }
 
+  function saveMealAllowance(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    update((current) => ({ ...current, mealAllowance: Number(form.get("mealAllowance")) || 0 }));
+    setModal(null);
+  }
+
   function addExpense(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -195,6 +207,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
       amount: Number(form.get("amount")),
       category: form.get("category") as Category,
       date: String(form.get("date")),
+      source: form.get("source") === "meal" ? "meal" : "salary",
     };
     update((current) => ({ ...current, expenses: [expense, ...current.expenses] }));
     setModal(null);
@@ -348,12 +361,16 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
 
         {!cloudEnabled && <div className="local-banner"><span>Modo local</span> Seus dados já estão sendo salvos neste dispositivo. Adicione as credenciais do Firebase para sincronizá-los na nuvem.</div>}
 
-        <section className={`summary-grid ${view === "expenses" ? "expense-summary" : view === "planning" ? "planning-summary" : ""} ${loading ? "is-loading" : ""}`} id="inicio">
+        <section className={`summary-grid ${view === "overview" ? "overview-summary" : view === "expenses" ? "expense-summary" : "planning-summary"} ${loading ? "is-loading" : ""}`} id="inicio">
           {view !== "expenses" && <>
           <article className="summary-card salary-card">
             <div className="card-heading"><span className="card-icon lime"><Icon name="wallet"/></span><span>Salário do mês</span><button onClick={() => setModal("salary")} aria-label="Editar salário"><Icon name="pencil" size={17}/></button></div>
             <strong>{money.format(data.salary)}</strong><small>Entrada mensal registrada</small>
           </article>
+          {view === "overview" && <article className={`summary-card benefit-card ${mealAvailable < 0 ? "benefit-negative" : ""}`}>
+            <div className="card-heading"><span className="card-icon meal"><Icon name="meal"/></span><span>Vale-alimentação</span><button onClick={() => setModal("meal")} aria-label="Editar vale-alimentação"><Icon name="pencil" size={17}/></button></div>
+            <strong>{money.format(mealAvailable)}</strong><small>{mealSpent > 0 ? `${money.format(mealSpent)} utilizados` : "Saldo disponível no benefício"}</small>
+          </article>}
           {view === "overview" && <article className="summary-card">
             <div className="card-heading"><span className="card-icon coral"><Icon name="arrowUp"/></span><span>Gastos realizados</span></div>
             <strong>{money.format(spent)}</strong><small>{data.expenses.length} {data.expenses.length === 1 ? "lançamento" : "lançamentos"}</small>
@@ -369,7 +386,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
           </article>}
           <article className={`summary-card available-card ${available < 0 ? "negative" : ""}`}>
             <div className="card-heading"><span>Saldo livre</span><span className="live-dot">AGORA</span></div>
-            <strong>{money.format(available)}</strong><small>Depois dos gastos e planos</small>
+            <strong>{money.format(available)}</strong><small>Depois dos gastos do salário e planos</small>
           </article>
         </section>
 
@@ -380,7 +397,8 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
             <div className="overview-body">
               <div className="donut" style={{ "--progress": `${committedPercent * 3.6}deg` } as React.CSSProperties}><div><strong>{Math.round(committedPercent)}%</strong><span>comprometido</span></div></div>
               <div className="breakdown">
-                <div><span><i className="dot spent"/>Gastos realizados</span><strong>{money.format(spent)}</strong></div>
+                <div><span><i className="dot spent"/>Gastos do salário</span><strong>{money.format(salarySpent)}</strong></div>
+                {mealAllowance > 0 && <div><span><i className="dot meal"/>Usado do vale</span><strong>{money.format(mealSpent)}</strong></div>}
                 <div><span><i className="dot planned"/>Compras planejadas</span><strong>{money.format(planned)}</strong></div>
                 <div><span><i className="dot free"/>Saldo livre</span><strong>{money.format(Math.max(available, 0))}</strong></div>
               </div>
@@ -401,7 +419,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
             <div className="panel-heading"><div><span className="eyebrow">DISTRIBUIÇÃO</span><h2>Onde seu dinheiro foi</h2></div></div>
             <div className="spending-impact">
               <div className="donut expense-donut" style={{ "--progress": `${spentPercent * 3.6}deg` } as React.CSSProperties}><div><strong>{Math.round(spentPercent)}%</strong><span>do salário</span></div></div>
-              <div><span>Você gastou</span><strong>{money.format(spent)}</strong><small>{data.salary > 0 ? `de ${money.format(data.salary)} recebidos` : "Cadastre seu salário para comparar"}</small></div>
+              <div><span>Você gastou</span><strong>{money.format(spent)}</strong><small>{data.salary > 0 ? `${money.format(salarySpent)} do salário${mealSpent > 0 ? ` + ${money.format(mealSpent)} do vale` : ""}` : "Cadastre seu salário para comparar"}</small></div>
             </div>
             {expensesByCategory.length === 0 ? <div className="chart-empty">As categorias aparecerão aqui quando você registrar um gasto.</div> : <div className="category-breakdown">
               {expensesByCategory.map((item) => {
@@ -426,7 +444,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
             </div>}
             {data.expenses.length === 0 ? <Empty icon="wallet" title="Nenhum gasto por aqui" text="Quando você registrar uma saída, ela aparece nesta lista." action="Registrar primeiro gasto" onClick={() => setModal("expense")}/> :
               visibleExpenses.length === 0 ? <div className="filter-empty"><strong>Nenhum gasto nesta categoria</strong><span>Escolha outra categoria para visualizar os lançamentos.</span></div> :
-              <div className="item-list">{visibleExpenses.map((item) => <div className="list-item" key={item.id}><span className={`category-icon cat-${categories.indexOf(item.category)}`}><Icon name="wallet" size={18}/></span><div><strong>{item.description}</strong><small>{item.category} · {shortDate.format(new Date(`${item.date}T00:00:00Z`))}</small></div><b>- {money.format(item.amount)}</b><button className="icon-button" aria-label="Excluir gasto" onClick={() => update((current) => ({ ...current, expenses: current.expenses.filter((entry) => entry.id !== item.id) }))}><Icon name="trash" size={17}/></button></div>)}</div>}
+              <div className="item-list">{visibleExpenses.map((item) => <div className="list-item" key={item.id}><span className={`category-icon cat-${categories.indexOf(item.category)}`}><Icon name={item.source === "meal" ? "meal" : "wallet"} size={18}/></span><div><strong>{item.description}</strong><small>{item.category} · {item.source === "meal" ? "Vale-alimentação" : "Salário"} · {shortDate.format(new Date(`${item.date}T00:00:00Z`))}</small></div><b>- {money.format(item.amount)}</b><button className="icon-button" aria-label="Excluir gasto" onClick={() => update((current) => ({ ...current, expenses: current.expenses.filter((entry) => entry.id !== item.id) }))}><Icon name="trash" size={17}/></button></div>)}</div>}
           </article>
           </>}
 
@@ -464,7 +482,8 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
       <nav className="mobile-nav"><Link className={view === "overview" ? "active" : ""} href="/"><Icon name="grid"/><small>Resumo</small></Link><Link className={view === "expenses" ? "active" : ""} href="/gastos"><Icon name="wallet"/><small>Gastos</small></Link><button onClick={() => view === "planning" ? openPlannedModal() : setModal("expense")}><Icon name="plus"/></button><Link className={view === "planning" ? "active" : ""} href="/planejamento"><Icon name="target"/><small>Planejar</small></Link></nav>
 
       {modal === "salary" && <Modal title="Qual é o seu salário?" subtitle="Este valor será usado como base apenas neste mês." onClose={() => setModal(null)}><form onSubmit={saveSalary}><label>Salário líquido<input name="salary" type="number" min="0" step="0.01" defaultValue={data.salary || ""} placeholder="R$ 0,00" autoFocus required/></label><button className="primary-button" type="submit">Salvar salário</button></form></Modal>}
-      {modal === "expense" && <Modal title="Registrar novo gasto" subtitle="Anote agora para não precisar lembrar depois." onClose={() => setModal(null)}><form onSubmit={addExpense}><label>Descrição<input name="description" placeholder="Ex.: Mercado da semana" autoFocus required/></label><div className="form-row"><label>Valor<input name="amount" type="number" min="0.01" step="0.01" placeholder="R$ 0,00" required/></label><label>Data<input name="date" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required/></label></div><CategorySelect/><button className="primary-button" type="submit">Adicionar gasto</button></form></Modal>}
+      {modal === "meal" && <Modal title="Vale-alimentação" subtitle="Informe o saldo recebido neste mês. Ele será controlado separadamente do salário." onClose={() => setModal(null)}><form onSubmit={saveMealAllowance}><label>Valor recebido<input name="mealAllowance" type="number" min="0" step="0.01" defaultValue={mealAllowance || ""} placeholder="R$ 0,00" autoFocus required/></label><button className="primary-button" type="submit">Salvar vale-alimentação</button></form></Modal>}
+      {modal === "expense" && <Modal title="Registrar novo gasto" subtitle="Anote agora para não precisar lembrar depois." onClose={() => setModal(null)}><form onSubmit={addExpense}><label>Descrição<input name="description" placeholder="Ex.: Mercado da semana" autoFocus required/></label><div className="form-row"><label>Valor<input name="amount" type="number" min="0.01" step="0.01" placeholder="R$ 0,00" required/></label><label>Data<input name="date" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required/></label></div><label>Pago com<select name="source" defaultValue="salary"><option value="salary">Salário</option><option value="meal">Vale-alimentação</option></select></label><CategorySelect/><button className="primary-button" type="submit">Adicionar gasto</button></form></Modal>}
       {modal === "planned" && <Modal title="Adicionar produto" subtitle="Cole o link da loja e simule como essa compra cabe no seu orçamento." onClose={() => setModal(null)}><form onSubmit={addPlanned}>
         <div className="product-link-field"><label>Link do produto<input name="productUrl" type="url" value={productLink} onChange={(event) => { setProductLink(event.target.value); setProductPreview({ imageUrl: "", loading: false, message: "" }); }} onBlur={() => productLink && void loadProductPreview()} placeholder="https://shopee.com.br/..." autoFocus/></label><button type="button" onClick={() => void loadProductPreview()} disabled={productPreview.loading}>{productPreview.loading ? "Buscando..." : "Buscar prévia"}</button></div>
         <div className="product-image-options">
