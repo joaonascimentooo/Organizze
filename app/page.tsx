@@ -161,6 +161,18 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
     });
     return () => { cancelled = true; };
   }, [data.planned, user?.uid]);
+
+  useEffect(() => {
+    if (!modal) return;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+    };
+  }, [modal]);
   const pageHeading = {
     overview: { eyebrow: "PAINEL FINANCEIRO", title: "Olá, vamos organizar?", description: "Seu dinheiro fica mais leve quando cada real tem um lugar." },
     expenses: { eyebrow: "MEUS GASTOS", title: "Tudo o que saiu, em um só lugar", description: "Acompanhe cada gasto do mês e mantenha seu saldo sob controle." },
