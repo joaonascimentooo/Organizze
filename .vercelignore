@@ -1,0 +1,9 @@
+.agents
+.codex
+.github
+.firebase
+coverage
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+*.log
