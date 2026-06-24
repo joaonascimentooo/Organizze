@@ -19,6 +19,7 @@ export type PlannedPurchase = {
   imageUrl?: string;
   imageId?: string;
   installments?: number;
+  timing?: "current" | "future";
 };
 
 export type MonthData = {

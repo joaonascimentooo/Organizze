@@ -101,7 +101,7 @@ header p { margin: 0; color: var(--muted); font-size: 12px; }
 .breakdown { display: grid; gap: 14px; }
 .breakdown > div { display: flex; align-items: center; justify-content: space-between; gap: 20px; font-size: 10px; }
 .breakdown > div span { display: flex; align-items: center; color: var(--muted); }.breakdown strong { font-size: 11px; }
-.dot { width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; }.dot.spent { background: var(--green); }.dot.meal { background: #e6a43a; }.dot.planned { background: var(--purple); }.dot.free { background: var(--lime); border: 1px solid #b6cd69; }
+.dot { width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; }.dot.spent { background: var(--green); }.dot.meal { background: #e6a43a; }.dot.planned { background: var(--purple); }.dot.future { background: #98a39a; }.dot.free { background: var(--lime); border: 1px solid #b6cd69; }
 .budget-track { height: 5px; background: #edf0ea; border-radius: 5px; position: relative; overflow: visible; }.budget-track span { display: block; height: 100%; max-width: 100%; border-radius: inherit; background: var(--green); }.budget-track i { position: absolute; top: -3px; width: 2px; height: 11px; background: var(--purple); }
 .helper-text { margin: 10px 0 0; color: var(--muted); font-size: 9.5px; }
 
@@ -246,6 +246,7 @@ header p { font-size: 14px; line-height: 1.55; }
 .product-media { height: 175px; padding: 13px; display: flex; align-items: center; justify-content: center; position: relative; background: linear-gradient(145deg, #edf2e9, #f8faf6); background-position: center; background-size: cover; }
 .product-media > span { display: grid; justify-items: center; gap: 7px; color: #87938a; }.product-media > span small { font-size: 10px; }
 .product-media > b { position: absolute; left: 12px; top: 12px; padding: 6px 9px; border-radius: 20px; color: white; background: rgba(24,63,49,.92); box-shadow: 0 4px 14px rgba(0,0,0,.12); font-size: 9px; }
+.product-media > .product-timing-badge { position: absolute; right: 12px; top: 12px; padding: 6px 9px; display: block; border-radius: 20px; color: #304033; background: rgba(255,255,255,.94); box-shadow: 0 4px 14px rgba(0,0,0,.1); font-size: 9px; font-weight: 800; }.product-media > .product-timing-badge.future { color: #644da9; background: #eee9ff; }
 .product-details { padding: 17px; }
 .product-category { color: #7f8c82; font-size: 9px; font-weight: 800; letter-spacing: .9px; text-transform: uppercase; }
 .product-details h3 { min-height: 42px; margin: 7px 0 11px; display: -webkit-box; overflow: hidden; font-size: 14px; line-height: 1.45; letter-spacing: -.2px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
@@ -253,6 +254,7 @@ header p { font-size: 14px; line-height: 1.55; }
 .installment-box { display: flex; align-items: center; gap: 10px; margin-top: 13px; padding: 11px; border-radius: 12px; background: #f3f6ee; }
 .installment-box > span { min-width: 39px; height: 39px; display: grid; place-items: center; border-radius: 10px; color: var(--green); background: var(--lime); font-size: 12px; font-weight: 850; }
 .installment-box > div { display: grid; gap: 2px; }.installment-box > div strong { font-size: 13px; }.installment-box > div small { color: var(--muted); font-size: 9px; }
+.timing-toggle { width: 100%; margin-top: 10px; padding: 10px 11px; display: flex; align-items: center; gap: 9px; border: 1px solid #dde4da; border-radius: 11px; color: var(--green); background: #f8faf7; cursor: pointer; text-align: left; transition: .18s ease; }.timing-toggle:hover { border-color: #becbbd; background: #f0f5ed; }.timing-toggle > span { display: grid; gap: 2px; }.timing-toggle strong { font-size: 10px; }.timing-toggle small { color: var(--muted); font-size: 8px; }.timing-toggle.is-future { border-color: #ded7f4; color: #674fb2; background: #f7f4ff; }
 .product-actions { display: flex; align-items: center; gap: 7px; margin-top: 14px; padding-top: 13px; border-top: 1px solid #edf0eb; }
 .product-actions > a { color: var(--green); font-size: 10px; font-weight: 800; text-decoration: none; }.product-actions > a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .product-actions .buy-button { margin-left: auto; }
