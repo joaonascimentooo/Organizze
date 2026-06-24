@@ -20,12 +20,17 @@ export type PlannedPurchase = {
   imageId?: string;
   installments?: number;
   timing?: "current" | "future";
+  startsInMonth?: string;
 };
 
 export type MonthData = {
   salary: number;
   mealAllowance: number;
   expenses: Expense[];
+  planned: PlannedPurchase[];
+};
+
+export type FuturePlanningData = {
   planned: PlannedPurchase[];
 };
 

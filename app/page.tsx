@@ -128,18 +128,25 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
   const [planError, setPlanError] = useState("");
   const [storedProductImages, setStoredProductImages] = useState<Record<string, string>>({});
   const [productPreview, setProductPreview] = useState<{ imageUrl: string; loading: boolean; message: string }>({ imageUrl: "", loading: false, message: "" });
-  const { data, update, loading, cloudEnabled, user, authReady, authError, signInWithGoogle, signOut } = useFinances(month);
+  const { data, futurePlanned, update, updateFuturePlanned, loading, cloudEnabled, user, authReady, authError, signInWithGoogle, signOut } = useFinances(month);
+  const plannedPurchases = useMemo(() => {
+    const currentIds = new Set(data.planned.map((item) => item.id));
+    return [
+      ...futurePlanned.filter((item) => (!item.startsInMonth || item.startsInMonth <= month) && !currentIds.has(item.id)),
+      ...data.planned,
+    ];
+  }, [data.planned, futurePlanned, month]);
 
   const spent = useMemo(() => data.expenses.reduce((total, item) => total + item.amount, 0), [data.expenses]);
   const salarySpent = useMemo(() => data.expenses.filter((item) => item.source !== "meal").reduce((total, item) => total + item.amount, 0), [data.expenses]);
   const mealSpent = useMemo(() => data.expenses.filter((item) => item.source === "meal").reduce((total, item) => total + item.amount, 0), [data.expenses]);
-  const planned = useMemo(() => data.planned.reduce((total, item) => total + item.amount, 0), [data.planned]);
-  const plannedThisMonth = useMemo(() => data.planned
+  const planned = useMemo(() => plannedPurchases.reduce((total, item) => total + item.amount, 0), [plannedPurchases]);
+  const plannedThisMonth = useMemo(() => plannedPurchases
     .filter((item) => item.timing !== "future")
-    .reduce((total, item) => total + (item.amount / Math.max(item.installments || 1, 1)), 0), [data.planned]);
-  const plannedForFuture = useMemo(() => data.planned
+    .reduce((total, item) => total + (item.amount / Math.max(item.installments || 1, 1)), 0), [plannedPurchases]);
+  const plannedForFuture = useMemo(() => plannedPurchases
     .filter((item) => item.timing === "future")
-    .reduce((total, item) => total + item.amount, 0), [data.planned]);
+    .reduce((total, item) => total + item.amount, 0), [plannedPurchases]);
   const mealAllowance = data.mealAllowance ?? 0;
   const mealAvailable = mealAllowance - mealSpent;
   const available = data.salary - salarySpent - plannedThisMonth;
@@ -165,13 +172,13 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
   }, [data.expenses, expenseCategory, expenseSort]);
 
   useEffect(() => {
-    const imageIds = data.planned.flatMap((item) => item.imageId ? [item.imageId] : []);
+    const imageIds = plannedPurchases.flatMap((item) => item.imageId ? [item.imageId] : []);
     let cancelled = false;
     void loadProductImages(user?.uid ?? null, imageIds).then((images) => {
       if (!cancelled) setStoredProductImages(images);
     });
     return () => { cancelled = true; };
-  }, [data.planned, user?.uid]);
+  }, [plannedPurchases, user?.uid]);
 
   useEffect(() => {
     if (!modal) return;
@@ -245,11 +252,16 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
       installments: Number(form.get("installments")) || 1,
       timing: form.get("timing") === "future" ? "future" : "current",
     };
+    if (item.timing === "future") item.startsInMonth = month;
     const productUrl = safeProductUrl(String(form.get("productUrl") || ""));
     if (productUrl) item.productUrl = productUrl;
     if (imageUrl) item.imageUrl = imageUrl;
     if (imageId) item.imageId = imageId;
-    update((current) => ({ ...current, planned: [item, ...current.planned] }));
+    if (item.timing === "future") {
+      updateFuturePlanned((current) => [item, ...current]);
+    } else {
+      update((current) => ({ ...current, planned: [item, ...current.planned] }));
+    }
     setModal(null);
     } catch (error) {
       setPlanError(error instanceof Error ? error.message : "Não foi possível salvar a imagem.");
@@ -321,17 +333,22 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
   }
 
   function removePlanned(item: PlannedPurchase) {
-    update((current) => ({ ...current, planned: current.planned.filter((entry) => entry.id !== item.id) }));
+    if (item.timing === "future") {
+      updateFuturePlanned((current) => current.filter((entry) => entry.id !== item.id));
+    } else {
+      update((current) => ({ ...current, planned: current.planned.filter((entry) => entry.id !== item.id) }));
+    }
     void deleteProductImage(user?.uid ?? null, item.imageId);
   }
 
   function togglePlanningTiming(item: PlannedPurchase) {
-    update((current) => ({
-      ...current,
-      planned: current.planned.map((entry) => entry.id === item.id
-        ? { ...entry, timing: entry.timing === "future" ? "current" : "future" }
-        : entry),
-    }));
+    if (item.timing === "future") {
+      updateFuturePlanned((current) => current.filter((entry) => entry.id !== item.id));
+      update((current) => ({ ...current, planned: [{ ...item, timing: "current" }, ...current.planned] }));
+    } else {
+      update((current) => ({ ...current, planned: current.planned.filter((entry) => entry.id !== item.id) }));
+      updateFuturePlanned((current) => [{ ...item, timing: "future", startsInMonth: month }, ...current]);
+    }
   }
 
   const userName = user?.displayName?.split(" ")[0] || "Você";
@@ -476,8 +493,8 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
           {view === "planning" && <article className="panel planning-panel" id="planejados">
             <div className="panel-heading"><div><span className="eyebrow">LISTA DE DESEJOS</span><h2>O que você quer comprar</h2></div><button className="text-button add-plan-button" onClick={openPlannedModal}><Icon name="plus" size={18}/>Adicionar produto</button></div>
             <p className="planning-intro">Compare o impacto no orçamento antes de decidir. O valor parcelado é calculado automaticamente.</p>
-            {data.planned.length === 0 ? <Empty icon="target" title="Sua lista está esperando uma ideia" text="Cole o link de um produto para visualizar preço, imagem e parcelamento em um só lugar." action="Adicionar primeiro produto" onClick={openPlannedModal}/> :
-              <div className="product-grid">{data.planned.map((item) => {
+            {plannedPurchases.length === 0 ? <Empty icon="target" title="Sua lista está esperando uma ideia" text="Cole o link de um produto para visualizar preço, imagem e parcelamento em um só lugar." action="Adicionar primeiro produto" onClick={openPlannedModal}/> :
+              <div className="product-grid">{plannedPurchases.map((item) => {
                 const installments = Math.max(item.installments || 1, 1);
                 const image = safeImageUrl((item.imageId && storedProductImages[item.imageId]) || item.imageUrl);
                 const productUrl = safeProductUrl(item.productUrl);
@@ -495,7 +512,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
                     <button className={`timing-toggle ${item.timing === "future" ? "is-future" : ""}`} onClick={() => togglePlanningTiming(item)}><Icon name={item.timing === "future" ? "target" : "wallet"} size={17}/><span><strong>{item.timing === "future" ? "Não desconta do saldo" : `${money.format(item.amount / installments)} neste mês`}</strong><small>{item.timing === "future" ? "Clique para trazer para este mês" : "Somente a parcela atual fica reservada"}</small></span></button>
                     <div className="product-actions">
                       {productUrl && <a href={productUrl} target="_blank" rel="noopener noreferrer">Ver na loja</a>}
-                      <button className="buy-button" title="Marcar como comprado" onClick={() => makePurchase(item)}><Icon name="check" size={16}/><span>Comprei</span></button>
+                      {item.timing !== "future" && <button className="buy-button" title="Marcar como comprado" onClick={() => makePurchase(item)}><Icon name="check" size={16}/><span>Comprei</span></button>}
                       <button className="icon-button" aria-label="Excluir planejamento" onClick={() => removePlanned(item)}><Icon name="trash" size={17}/></button>
                     </div>
                   </div>
