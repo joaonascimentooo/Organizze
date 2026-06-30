@@ -11,6 +11,8 @@ const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL
 const monthFormatter = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
 const shortDate = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", timeZone: "UTC" });
 const selectedMonthKey = "organizze:selected-month";
+const selectedThemeKey = "organizze:theme";
+type ThemeMode = "light" | "dark";
 
 function monthKey(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
@@ -20,6 +22,12 @@ function initialSelectedMonth() {
   if (typeof window === "undefined") return monthKey();
   const savedMonth = window.localStorage.getItem(selectedMonthKey);
   return savedMonth && /^\d{4}-\d{2}$/.test(savedMonth) ? savedMonth : monthKey();
+}
+
+function initialSelectedTheme(): ThemeMode {
+  if (typeof window === "undefined") return "dark";
+  const savedTheme = window.localStorage.getItem(selectedThemeKey);
+  return savedTheme === "light" || savedTheme === "dark" ? savedTheme : "dark";
 }
 
 function shiftMonth(key: string, amount: number) {
@@ -101,6 +109,8 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
     trash: <><path d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3"/></>,
     check: <path d="m5 12 4 4L19 6"/>,
     cloud: <><path d="M17.5 19H7a5 5 0 1 1 1.3-9.8A7 7 0 0 1 21 13a4 4 0 0 1-3.5 6Z"/><path d="m9 14 2 2 4-4"/></>,
+    sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></>,
+    moon: <path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a7 7 0 1 0 11 11Z"/>,
     logout: <><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/></>,
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>{paths[name]}</svg>;
@@ -135,6 +145,7 @@ export type OrganizzeView = "overview" | "expenses" | "planning" | "settings";
 export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
   const reduceMotion = useReducedMotion();
   const [month, setMonth] = useState(initialSelectedMonth);
+  const [theme, setTheme] = useState<ThemeMode>(initialSelectedTheme);
   const [modal, setModal] = useState<"salary" | "meal" | "expense" | "planned" | null>(null);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [editingPlanned, setEditingPlanned] = useState<PlannedPurchase | null>(null);
@@ -158,6 +169,11 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
   useEffect(() => {
     window.localStorage.setItem(selectedMonthKey, month);
   }, [month]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem(selectedThemeKey, theme);
+  }, [theme]);
   const plannedPurchases = useMemo(() => {
     const currentIds = new Set(data.planned.map((item) => item.id));
     return [
@@ -525,6 +541,11 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
   const initials = user?.displayName
     ? user.displayName.split(" ").slice(0, 2).map((part) => part[0]).join("").toUpperCase()
     : "VO";
+  const nextTheme = theme === "dark" ? "light" : "dark";
+
+  function toggleTheme() {
+    setTheme((current) => current === "dark" ? "light" : "dark");
+  }
 
   if (cloudEnabled && (!authReady || !user || user.isAnonymous)) {
     return (
@@ -555,6 +576,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
         </nav>
         <div className="sidebar-bottom">
           <div className="small-note"><span><Icon name="cloud" size={17}/>{cloudEnabled && user ? "Sincronizado" : "Salvo neste navegador"}</span><small>{cloudEnabled && user ? `Conta de ${userName}` : "Conecte o Firebase quando quiser"}</small></div>
+          <button className="theme-toggle" type="button" onClick={toggleTheme} aria-label={`Trocar para tema ${nextTheme === "dark" ? "escuro" : "claro"}`}><Icon name={theme === "dark" ? "sun" : "moon"} size={17}/><span>{theme === "dark" ? "Tema claro" : "Tema escuro"}</span></button>
           <Link className={view === "settings" ? "active" : ""} href="/configuracoes"><Icon name="settings"/>Configurações</Link>
           <div className="profile"><span>{initials}</span><div><strong>{userName}</strong><small>{user?.email || "Modo local"}</small></div>{user && <button onClick={signOut} aria-label="Sair da conta" title="Sair"><Icon name="logout" size={17}/></button>}</div>
         </div>
@@ -567,7 +589,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
       >
         <header>
           <div><span className="eyebrow">{pageHeading.eyebrow}</span><h1>{pageHeading.title}</h1><p>{pageHeading.description}</p></div>
-          <div className="month-picker"><button onClick={() => setMonth(shiftMonth(month, -1))} aria-label="Mês anterior"><Icon name="chevronLeft"/></button><span>{labelMonth(month)}</span><button onClick={() => setMonth(shiftMonth(month, 1))} aria-label="Próximo mês"><Icon name="chevronRight"/></button></div>
+          <div className="header-actions"><div className="month-picker"><button onClick={() => setMonth(shiftMonth(month, -1))} aria-label="Mês anterior"><Icon name="chevronLeft"/></button><span>{labelMonth(month)}</span><button onClick={() => setMonth(shiftMonth(month, 1))} aria-label="Próximo mês"><Icon name="chevronRight"/></button></div><button className="mobile-theme-toggle" type="button" onClick={toggleTheme} aria-label={`Trocar para tema ${nextTheme === "dark" ? "escuro" : "claro"}`}><Icon name={theme === "dark" ? "sun" : "moon"} size={19}/></button></div>
         </header>
 
         {!cloudEnabled && <div className="local-banner"><span>Modo local</span> Seus dados já estão sendo salvos neste dispositivo. Adicione as credenciais do Firebase para sincronizá-los na nuvem.</div>}
@@ -708,6 +730,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
             <article className="panel settings-panel">
               <div className="settings-heading"><span className="settings-icon"><Icon name="cloud"/></span><div><span className="eyebrow">CONTA E SINCRONIZAÇÃO</span><h2>{cloudEnabled ? "Dados protegidos na nuvem" : "Dados neste dispositivo"}</h2><p>{cloudEnabled ? "Suas alterações são sincronizadas automaticamente." : "O modo local mantém tudo salvo apenas neste navegador."}</p></div></div>
               <div className="account-details"><div><span>Perfil</span><strong>{user?.displayName || "Modo local"}</strong></div><div><span>E-mail</span><strong>{user?.email || "Não conectado"}</strong></div><div><span>Status</span><strong className="sync-status"><i/>{cloudEnabled ? "Sincronizado" : "Armazenamento local"}</strong></div></div>
+              <button className="secondary-button" type="button" onClick={toggleTheme}><Icon name={theme === "dark" ? "sun" : "moon"} size={17}/>{theme === "dark" ? "Usar tema claro" : "Usar tema escuro"}</button>
               {user && <button className="secondary-button" onClick={signOut}><Icon name="logout" size={17}/>Sair da conta</button>}
             </article>
 
