@@ -136,14 +136,19 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
   const reduceMotion = useReducedMotion();
   const [month, setMonth] = useState(initialSelectedMonth);
   const [modal, setModal] = useState<"salary" | "meal" | "expense" | "planned" | null>(null);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [editingPlanned, setEditingPlanned] = useState<PlannedPurchase | null>(null);
   const [expenseSort, setExpenseSort] = useState<"recent" | "highest" | "lowest">("recent");
   const [expenseCategory, setExpenseCategory] = useState<Category | "Todas">("Todas");
   const [productLink, setProductLink] = useState("");
   const [productName, setProductName] = useState("");
   const [productAmount, setProductAmount] = useState("");
   const [productInstallments, setProductInstallments] = useState(1);
+  const [productTiming, setProductTiming] = useState<"current" | "future">("current");
+  const [productCategory, setProductCategory] = useState<Category>("Outros");
   const [productImage, setProductImage] = useState<File | null>(null);
   const [manualImagePreview, setManualImagePreview] = useState("");
+  const [removePlannedImage, setRemovePlannedImage] = useState(false);
   const [savingPlan, setSavingPlan] = useState(false);
   const [planError, setPlanError] = useState("");
   const [storedProductImages, setStoredProductImages] = useState<Record<string, string>>({});
@@ -283,29 +288,52 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
     update(() => emptyMonth());
   }
 
-  function addExpense(event: FormEvent<HTMLFormElement>) {
+  function saveExpense(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const expense: Expense = {
-      id: crypto.randomUUID(),
+      id: editingExpense?.id ?? crypto.randomUUID(),
       description: String(form.get("description")),
       amount: Number(form.get("amount")),
       category: form.get("category") as Category,
       date: String(form.get("date")),
       source: form.get("source") === "meal" ? "meal" : "salary",
+      purchaseId: editingExpense?.purchaseId,
+      installmentNumber: editingExpense?.installmentNumber,
+      installmentCount: editingExpense?.installmentCount,
     };
-    update((current) => ({ ...current, expenses: [expense, ...current.expenses] }));
-    setModal(null);
+    update((current) => {
+      if (!editingExpense) return { ...current, expenses: [expense, ...current.expenses] };
+      return { ...current, expenses: current.expenses.map((entry) => entry.id === editingExpense.id ? expense : entry) };
+    });
+    closeExpenseModal();
   }
 
-  async function addPlanned(event: FormEvent<HTMLFormElement>) {
+  function openExpenseModal() {
+    setEditingExpense(null);
+    setModal("expense");
+  }
+
+  function openEditExpenseModal(expense: Expense) {
+    setEditingExpense(expense);
+    setModal("expense");
+  }
+
+  function closeExpenseModal() {
+    setModal(null);
+    setEditingExpense(null);
+  }
+
+  async function savePlanned(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const productId = crypto.randomUUID();
+    const isEditing = Boolean(editingPlanned);
+    const productId = editingPlanned?.id ?? crypto.randomUUID();
     setSavingPlan(true);
     setPlanError("");
-    let imageUrl = productPreview.imageUrl || undefined;
-    let imageId: string | undefined;
+    let imageUrl = removePlannedImage ? undefined : editingPlanned?.imageUrl || productPreview.imageUrl || undefined;
+    let imageId: string | undefined = removePlannedImage ? undefined : editingPlanned?.imageId;
+    const previousImageId = editingPlanned?.imageId;
 
     try {
       if (productImage) {
@@ -319,22 +347,43 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
       id: productId,
       description: String(form.get("description")),
       amount: Number(form.get("amount")),
-      category: form.get("category") as Category,
-      purchased: false,
+      category: productCategory,
+      purchased: editingPlanned?.purchased ?? false,
       installments: Number(form.get("installments")) || 1,
-      timing: form.get("timing") === "future" ? "future" : "current",
+      timing: productTiming,
     };
-    if (item.timing === "future") item.startsInMonth = month;
+    if (item.timing === "future") item.startsInMonth = editingPlanned?.startsInMonth || month;
     const productUrl = safeProductUrl(String(form.get("productUrl") || ""));
     if (productUrl) item.productUrl = productUrl;
     if (imageUrl) item.imageUrl = imageUrl;
     if (imageId) item.imageId = imageId;
-    if (item.timing === "future") {
+    if (isEditing) {
+      update((current) => {
+        const existingIndex = current.planned.findIndex((entry) => entry.id === item.id);
+        const planned = current.planned.filter((entry) => entry.id !== item.id);
+        if (item.timing !== "future") planned.splice(existingIndex >= 0 ? existingIndex : 0, 0, item);
+        return { ...current, planned };
+      });
+      updateFuturePlanned((current) => {
+        const existingIndex = current.findIndex((entry) => entry.id === item.id);
+        const planned = current.filter((entry) => entry.id !== item.id);
+        if (item.timing === "future") planned.splice(existingIndex >= 0 ? existingIndex : 0, 0, item);
+        return planned;
+      });
+      if ((removePlannedImage || productImage) && previousImageId && previousImageId !== imageId) {
+        void deleteProductImage(user?.uid ?? null, previousImageId);
+        setStoredProductImages((current) => {
+          const next = { ...current };
+          delete next[previousImageId];
+          return next;
+        });
+      }
+    } else if (item.timing === "future") {
       updateFuturePlanned((current) => [item, ...current]);
     } else {
       update((current) => ({ ...current, planned: [item, ...current.planned] }));
     }
-    setModal(null);
+    closePlannedModal();
     } catch (error) {
       setPlanError(error instanceof Error ? error.message : "Não foi possível salvar a imagem.");
     } finally {
@@ -343,15 +392,45 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
   }
 
   function openPlannedModal() {
+    setEditingPlanned(null);
     setProductLink("");
     setProductName("");
     setProductAmount("");
     setProductInstallments(1);
+    setProductTiming("current");
+    setProductCategory("Outros");
     setProductImage(null);
     setManualImagePreview("");
+    setRemovePlannedImage(false);
     setPlanError("");
     setProductPreview({ imageUrl: "", loading: false, message: "" });
     setModal("planned");
+  }
+
+  function openEditPlannedModal(item: PlannedPurchase) {
+    const image = safeImageUrl((item.imageId && storedProductImages[item.imageId]) || item.imageUrl);
+    setEditingPlanned(item);
+    setProductLink(item.productUrl || "");
+    setProductName(item.description);
+    setProductAmount(String(item.amount));
+    setProductInstallments(Math.max(item.installments || 1, 1));
+    setProductTiming(item.timing === "future" ? "future" : "current");
+    setProductCategory(item.category);
+    setProductImage(null);
+    setManualImagePreview("");
+    setRemovePlannedImage(false);
+    setPlanError("");
+    setProductPreview({ imageUrl: image, loading: false, message: image ? "Imagem atual do produto." : "" });
+    setModal("planned");
+  }
+
+  function closePlannedModal() {
+    setModal(null);
+    setEditingPlanned(null);
+    setProductImage(null);
+    setManualImagePreview("");
+    setRemovePlannedImage(false);
+    setPlanError("");
   }
 
   async function loadProductPreview() {
@@ -379,6 +458,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
       validateProductImage(file);
       setPlanError("");
       setProductImage(file);
+      setRemovePlannedImage(false);
       const reader = new FileReader();
       reader.onload = () => setManualImagePreview(String(reader.result));
       reader.onerror = () => setPlanError("Não foi possível visualizar a imagem.");
@@ -541,7 +621,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
 
           <article className="panel quick-panel">
             <span className="eyebrow">ATALHOS</span><h2>O que vamos anotar?</h2>
-            <button className="quick-action" onClick={() => setModal("expense")}><span className="card-icon coral"><Icon name="plus"/></span><span><strong>Novo gasto</strong><small>Registre o que já saiu</small></span><Icon name="chevronRight"/></button>
+            <button className="quick-action" onClick={openExpenseModal}><span className="card-icon coral"><Icon name="plus"/></span><span><strong>Novo gasto</strong><small>Registre o que já saiu</small></span><Icon name="chevronRight"/></button>
             <button className="quick-action" onClick={openPlannedModal}><span className="card-icon purple"><Icon name="cart"/></span><span><strong>Planejar compra</strong><small>Reserve antes de gastar</small></span><Icon name="chevronRight"/></button>
           </article>
           </>}
@@ -568,15 +648,15 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
           </article>
 
           <article className="panel list-panel focused-list expense-list-panel" id="gastos">
-            <div className="panel-heading"><div><span className="eyebrow">MOVIMENTAÇÕES</span><h2>Todos os gastos</h2></div><button className="text-button" onClick={() => setModal("expense")}><Icon name="plus" size={17}/>Adicionar</button></div>
+            <div className="panel-heading"><div><span className="eyebrow">MOVIMENTAÇÕES</span><h2>Todos os gastos</h2></div><button className="text-button" onClick={openExpenseModal}><Icon name="plus" size={17}/>Adicionar</button></div>
             {data.expenses.length > 0 && <div className="expense-filters">
               <label><span>Categoria</span><select value={expenseCategory} onChange={(event) => setExpenseCategory(event.target.value as Category | "Todas")}><option value="Todas">Todas as categorias</option>{categories.map((category) => <option key={category}>{category}</option>)}</select></label>
               <label><span>Ordenar por</span><select value={expenseSort} onChange={(event) => setExpenseSort(event.target.value as "recent" | "highest" | "lowest")}><option value="recent">Mais recentes</option><option value="highest">Maior valor</option><option value="lowest">Menor valor</option></select></label>
               <small>{visibleExpenses.length} {visibleExpenses.length === 1 ? "resultado" : "resultados"}</small>
             </div>}
-            {data.expenses.length === 0 ? <Empty icon="wallet" title="Nenhum gasto por aqui" text="Quando você registrar uma saída, ela aparece nesta lista." action="Registrar primeiro gasto" onClick={() => setModal("expense")}/> :
+            {data.expenses.length === 0 ? <Empty icon="wallet" title="Nenhum gasto por aqui" text="Quando você registrar uma saída, ela aparece nesta lista." action="Registrar primeiro gasto" onClick={openExpenseModal}/> :
               visibleExpenses.length === 0 ? <div className="filter-empty"><strong>Nenhum gasto nesta categoria</strong><span>Escolha outra categoria para visualizar os lançamentos.</span></div> :
-              <div className="item-list">{visibleExpenses.map((item) => <div className="list-item" key={item.id}><span className={`category-icon cat-${categories.indexOf(item.category)}`}><Icon name={item.source === "meal" ? "meal" : "wallet"} size={18}/></span><div><strong>{item.description}</strong><small>{item.category} · {item.source === "meal" ? "Vale-alimentação" : "Salário"} · {shortDate.format(new Date(`${item.date}T00:00:00Z`))}</small></div><b>- {money.format(item.amount)}</b><button className="icon-button" aria-label="Excluir gasto" onClick={() => update((current) => ({ ...current, expenses: current.expenses.filter((entry) => entry.id !== item.id) }))}><Icon name="trash" size={17}/></button></div>)}</div>}
+              <div className="item-list">{visibleExpenses.map((item) => <div className="list-item" key={item.id}><span className={`category-icon cat-${categories.indexOf(item.category)}`}><Icon name={item.source === "meal" ? "meal" : "wallet"} size={18}/></span><div><strong>{item.description}</strong><small>{item.category} · {item.source === "meal" ? "Vale-alimentação" : "Salário"} · {shortDate.format(new Date(`${item.date}T00:00:00Z`))}</small></div><b>- {money.format(item.amount)}</b><button className="icon-button" aria-label="Editar gasto" onClick={() => openEditExpenseModal(item)}><Icon name="pencil" size={17}/></button><button className="icon-button" aria-label="Excluir gasto" onClick={() => update((current) => ({ ...current, expenses: current.expenses.filter((entry) => entry.id !== item.id) }))}><Icon name="trash" size={17}/></button></div>)}</div>}
           </article>
           </>}
 
@@ -603,6 +683,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
                     <div className="product-actions">
                       {productUrl && <a href={productUrl} target="_blank" rel="noopener noreferrer">Ver na loja</a>}
                       {item.timing !== "future" && <button className="buy-button" title="Marcar como comprado" onClick={() => makePurchase(item)}><Icon name="check" size={16}/><span>Comprei</span></button>}
+                      <button className="icon-button" aria-label="Editar planejamento" onClick={() => openEditPlannedModal(item)}><Icon name="pencil" size={17}/></button>
                       <button className="icon-button" aria-label="Excluir planejamento" onClick={() => removePlanned(item)}><Icon name="trash" size={17}/></button>
                     </div>
                   </div>
@@ -639,24 +720,25 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
         </section>
       </motion.main>
 
-      <nav className="mobile-nav"><Link className={view === "overview" ? "active" : ""} href="/"><Icon name="grid"/><small>Resumo</small></Link><Link className={view === "expenses" ? "active" : ""} href="/gastos"><Icon name="wallet"/><small>Gastos</small></Link><button onClick={() => view === "planning" ? openPlannedModal() : setModal("expense")}><Icon name="plus"/></button><Link className={view === "planning" ? "active" : ""} href="/planejamento"><Icon name="target"/><small>Planejar</small></Link><Link className={view === "settings" ? "active" : ""} href="/configuracoes"><Icon name="settings"/><small>Ajustes</small></Link></nav>
+      <nav className="mobile-nav"><Link className={view === "overview" ? "active" : ""} href="/"><Icon name="grid"/><small>Resumo</small></Link><Link className={view === "expenses" ? "active" : ""} href="/gastos"><Icon name="wallet"/><small>Gastos</small></Link><button onClick={() => view === "planning" ? openPlannedModal() : openExpenseModal()}><Icon name="plus"/></button><Link className={view === "planning" ? "active" : ""} href="/planejamento"><Icon name="target"/><small>Planejar</small></Link><Link className={view === "settings" ? "active" : ""} href="/configuracoes"><Icon name="settings"/><small>Ajustes</small></Link></nav>
 
       {modal === "salary" && <Modal title="Qual é o seu salário?" subtitle="O valor pode continuar nos próximos meses ou valer apenas para o mês selecionado." onClose={() => setModal(null)}><form onSubmit={saveSalary}><label>Salário líquido<input name="salary" type="number" min="0" step="0.01" defaultValue={salary || ""} placeholder="R$ 0,00" autoFocus required/></label><label>Aplicar alteração<select name="scope" defaultValue="forward"><option value="forward">Deste mês em diante</option><option value="month">Somente neste mês</option></select></label><button className="primary-button" type="submit">Salvar salário</button></form></Modal>}
       {modal === "meal" && <Modal title="Vale-alimentação" subtitle="O valor pode continuar nos próximos meses ou valer apenas para o mês selecionado." onClose={() => setModal(null)}><form onSubmit={saveMealAllowance}><label>Valor recebido<input name="mealAllowance" type="number" min="0" step="0.01" defaultValue={mealAllowance || ""} placeholder="R$ 0,00" autoFocus required/></label><label>Aplicar alteração<select name="scope" defaultValue="forward"><option value="forward">Deste mês em diante</option><option value="month">Somente neste mês</option></select></label><button className="primary-button" type="submit">Salvar vale-alimentação</button></form></Modal>}
-      {modal === "expense" && <Modal title="Registrar novo gasto" subtitle="Anote agora para não precisar lembrar depois." onClose={() => setModal(null)}><form onSubmit={addExpense}><label>Descrição<input name="description" placeholder="Ex.: Mercado da semana" autoFocus required/></label><div className="form-row"><label>Valor<input name="amount" type="number" min="0.01" step="0.01" placeholder="R$ 0,00" required/></label><label>Data<input name="date" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required/></label></div><label>Pago com<select name="source" defaultValue="salary"><option value="salary">Salário</option><option value="meal">Vale-alimentação</option></select></label><CategorySelect/><button className="primary-button" type="submit">Adicionar gasto</button></form></Modal>}
-      {modal === "planned" && <Modal title="Adicionar produto" subtitle="Cole o link da loja e simule como essa compra cabe no seu orçamento." onClose={() => setModal(null)}><form onSubmit={addPlanned}>
+      {modal === "expense" && <Modal title={editingExpense ? "Editar gasto" : "Registrar novo gasto"} subtitle="Anote agora para não precisar lembrar depois." onClose={closeExpenseModal}><form onSubmit={saveExpense}><label>Descrição<input name="description" placeholder="Ex.: Mercado da semana" defaultValue={editingExpense?.description || ""} autoFocus required/></label><div className="form-row"><label>Valor<input name="amount" type="number" min="0.01" step="0.01" defaultValue={editingExpense?.amount || ""} placeholder="R$ 0,00" required/></label><label>Data<input name="date" type="date" defaultValue={editingExpense?.date || new Date().toISOString().slice(0, 10)} required/></label></div><label>Pago com<select name="source" defaultValue={editingExpense?.source || "salary"}><option value="salary">Salário</option><option value="meal">Vale-alimentação</option></select></label><CategorySelect defaultValue={editingExpense?.category || "Outros"}/><button className="primary-button" type="submit">{editingExpense ? "Salvar alterações" : "Adicionar gasto"}</button></form></Modal>}
+      {modal === "planned" && <Modal title={editingPlanned ? "Editar produto" : "Adicionar produto"} subtitle="Cole o link da loja e simule como essa compra cabe no seu orçamento." onClose={closePlannedModal}><form onSubmit={savePlanned}>
         <div className="product-link-field"><label>Link do produto<input name="productUrl" type="url" value={productLink} onChange={(event) => { setProductLink(event.target.value); setProductPreview({ imageUrl: "", loading: false, message: "" }); }} onBlur={() => productLink && void loadProductPreview()} placeholder="https://shopee.com.br/..." autoFocus/></label><button type="button" onClick={() => void loadProductPreview()} disabled={productPreview.loading}>{productPreview.loading ? "Buscando..." : "Buscar prévia"}</button></div>
         <div className="product-image-options">
           <label className="image-upload-button"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => chooseProductImage(event.target.files?.[0])}/><span><Icon name="plus" size={17}/><strong>Escolher uma imagem</strong><small>JPG, PNG ou WebP · até 10 MB</small></span></label>
+          {editingPlanned && (editingPlanned.imageId || editingPlanned.imageUrl) && !removePlannedImage && <button className="secondary-button" type="button" onClick={() => { setRemovePlannedImage(true); setProductImage(null); setManualImagePreview(""); }}>Remover imagem</button>}
           <small>A imagem escolhida por você substitui a prévia automática.</small>
         </div>
-        {(manualImagePreview || productPreview.imageUrl || productPreview.message) && <div className={`product-form-preview ${manualImagePreview || productPreview.imageUrl ? "with-image" : ""}`}><span style={manualImagePreview || productPreview.imageUrl ? { backgroundImage: `url(${JSON.stringify(manualImagePreview || productPreview.imageUrl)})` } : undefined}>{!manualImagePreview && !productPreview.imageUrl && <Icon name="cart"/>}</span><div><strong>{manualImagePreview ? "Sua imagem está pronta" : productPreview.imageUrl ? "Prévia encontrada" : "Sem imagem automática"}</strong><small>{manualImagePreview ? productImage?.name : productPreview.message}</small></div></div>}
+        {!removePlannedImage && (manualImagePreview || productPreview.imageUrl || productPreview.message) && <div className={`product-form-preview ${manualImagePreview || productPreview.imageUrl ? "with-image" : ""}`}><span style={manualImagePreview || productPreview.imageUrl ? { backgroundImage: `url(${JSON.stringify(manualImagePreview || productPreview.imageUrl)})` } : undefined}>{!manualImagePreview && !productPreview.imageUrl && <Icon name="cart"/>}</span><div><strong>{manualImagePreview ? "Sua imagem está pronta" : productPreview.imageUrl ? "Prévia encontrada" : "Sem imagem automática"}</strong><small>{manualImagePreview ? productImage?.name : productPreview.message}</small></div></div>}
         <label>Nome do produto<input name="description" value={productName} onChange={(event) => setProductName(event.target.value)} placeholder="Ex.: Fone de ouvido" required/></label>
         <div className="form-row"><label>Valor total<input name="amount" type="number" min="0.01" step="0.01" value={productAmount} onChange={(event) => setProductAmount(event.target.value)} placeholder="R$ 0,00" required/></label><label>Parcelamento<select name="installments" value={productInstallments} onChange={(event) => setProductInstallments(Number(event.target.value))}>{Array.from({ length: 24 }, (_, index) => index + 1).map((number) => <option value={number} key={number}>{number === 1 ? "À vista" : `${number} parcelas`}</option>)}</select></label></div>
         {Number(productAmount) > 0 && <div className="installment-simulation"><span>{productInstallments === 1 ? "Pagamento à vista" : `${productInstallments} parcelas de`}</span><strong>{money.format(Number(productAmount) / productInstallments)}</strong><small>{productInstallments === 1 ? "valor debitado deste mês" : `ao clicar em Comprei, as parcelas serão lançadas até ${labelMonth(shiftMonth(month, productInstallments - 1))} · total de ${money.format(Number(productAmount))}`}</small></div>}
-        <label>Quando você pretende comprar?<select name="timing" defaultValue="current"><option value="current">Neste mês — descontar do saldo</option><option value="future">No futuro — não descontar agora</option></select></label>
+        <label>Quando você pretende comprar?<select name="timing" value={productTiming} onChange={(event) => setProductTiming(event.target.value === "future" ? "future" : "current")}><option value="current">Neste mês — descontar do saldo</option><option value="future">No futuro — não descontar agora</option></select></label>
         {planError && <div className="form-error">{planError}</div>}
-        <CategorySelect/><button className="primary-button" type="submit" disabled={savingPlan}>{savingPlan ? "Salvando imagem..." : "Adicionar ao planejamento"}</button>
+        <label>Categoria<select name="category" value={productCategory} onChange={(event) => setProductCategory(event.target.value as Category)}>{categories.map((category) => <option key={category}>{category}</option>)}</select></label><button className="primary-button" type="submit" disabled={savingPlan}>{savingPlan ? "Salvando imagem..." : editingPlanned ? "Salvar alterações" : "Adicionar ao planejamento"}</button>
       </form></Modal>}
     </div>
   );
