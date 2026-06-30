@@ -10,9 +10,16 @@ import { deleteProductImage, loadProductImages, optimizeProductImage, saveProduc
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const monthFormatter = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
 const shortDate = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", timeZone: "UTC" });
+const selectedMonthKey = "organizze:selected-month";
 
 function monthKey(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function initialSelectedMonth() {
+  if (typeof window === "undefined") return monthKey();
+  const savedMonth = window.localStorage.getItem(selectedMonthKey);
+  return savedMonth && /^\d{4}-\d{2}$/.test(savedMonth) ? savedMonth : monthKey();
 }
 
 function shiftMonth(key: string, amount: number) {
@@ -127,7 +134,7 @@ export type OrganizzeView = "overview" | "expenses" | "planning" | "settings";
 
 export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
   const reduceMotion = useReducedMotion();
-  const [month, setMonth] = useState(monthKey());
+  const [month, setMonth] = useState(initialSelectedMonth);
   const [modal, setModal] = useState<"salary" | "meal" | "expense" | "planned" | null>(null);
   const [expenseSort, setExpenseSort] = useState<"recent" | "highest" | "lowest">("recent");
   const [expenseCategory, setExpenseCategory] = useState<Category | "Todas">("Todas");
@@ -142,6 +149,10 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
   const [storedProductImages, setStoredProductImages] = useState<Record<string, string>>({});
   const [productPreview, setProductPreview] = useState<{ imageUrl: string; loading: boolean; message: string }>({ imageUrl: "", loading: false, message: "" });
   const { data, futurePlanned, recurringSalary, recurringMealAllowance, update, updateFuturePlanned, updateRecurringIncome, addExpensesToMonths, loading, cloudEnabled, user, authReady, authError, signInWithGoogle, signOut } = useFinances(month);
+
+  useEffect(() => {
+    window.localStorage.setItem(selectedMonthKey, month);
+  }, [month]);
   const plannedPurchases = useMemo(() => {
     const currentIds = new Set(data.planned.map((item) => item.id));
     return [
