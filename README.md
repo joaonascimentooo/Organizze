@@ -23,34 +23,6 @@
   <img alt="Firebase" src="https://img.shields.io/badge/Firebase-Auth%20%2B%20Firestore-ffca28?style=for-the-badge&logo=firebase&logoColor=111" />
 </p>
 
-## Screenshots
-
-### Desktop
-
-<p align="center">
-  <img src="./docs/screenshots/desktop-overview.png" alt="Organizze desktop overview" width="100%" />
-</p>
-
-<p align="center">
-  <img src="./docs/screenshots/desktop-expenses.png" alt="Organizze desktop expenses" width="100%" />
-</p>
-
-<p align="center">
-  <img src="./docs/screenshots/desktop-planning.png" alt="Organizze desktop planning" width="100%" />
-</p>
-
-<p align="center">
-  <img src="./docs/screenshots/desktop-settings.png" alt="Organizze desktop settings" width="100%" />
-</p>
-
-### Mobile
-
-<p align="center">
-  <img src="./docs/screenshots/mobile-overview.png" alt="Organizze mobile overview" width="30%" />
-  <img src="./docs/screenshots/mobile-expenses.png" alt="Organizze mobile expenses" width="30%" />
-  <img src="./docs/screenshots/mobile-planning.png" alt="Organizze mobile planning" width="30%" />
-</p>
-
 ## O que e
 
 **Organizze** e uma aplicacao web de financas pessoais feita para responder uma pergunta simples: **posso comprar isso agora sem baguncar meu mes?**
@@ -199,3 +171,31 @@ As regras do Firestore validam o usuario autenticado antes de permitir leitura o
 ## Status
 
 Organizze esta em desenvolvimento ativo. A base atual ja cobre o fluxo principal de controle mensal, planejamento de compras e sincronizacao na nuvem.
+
+## Screenshots
+
+### Desktop
+
+<p align="center">
+  <img src="./docs/screenshots/desktop-overview.png" alt="Organizze desktop overview" width="100%" />
+</p>
+
+<p align="center">
+  <img src="./docs/screenshots/desktop-expenses.png" alt="Organizze desktop expenses" width="100%" />
+</p>
+
+<p align="center">
+  <img src="./docs/screenshots/desktop-planning.png" alt="Organizze desktop planning" width="100%" />
+</p>
+
+<p align="center">
+  <img src="./docs/screenshots/desktop-settings.png" alt="Organizze desktop settings" width="100%" />
+</p>
+
+### Mobile
+
+<p align="center">
+  <img src="./docs/screenshots/mobile-overview.png" alt="Organizze mobile overview" width="30%" />
+  <img src="./docs/screenshots/mobile-expenses.png" alt="Organizze mobile expenses" width="30%" />
+  <img src="./docs/screenshots/mobile-planning.png" alt="Organizze mobile planning" width="30%" />
+</p>
