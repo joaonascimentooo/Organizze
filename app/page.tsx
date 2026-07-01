@@ -162,9 +162,11 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
   const [removePlannedImage, setRemovePlannedImage] = useState(false);
   const [savingPlan, setSavingPlan] = useState(false);
   const [planError, setPlanError] = useState("");
+  const [savingProfilePhoto, setSavingProfilePhoto] = useState(false);
+  const [profilePhotoError, setProfilePhotoError] = useState("");
   const [storedProductImages, setStoredProductImages] = useState<Record<string, string>>({});
   const [productPreview, setProductPreview] = useState<{ imageUrl: string; loading: boolean; message: string }>({ imageUrl: "", loading: false, message: "" });
-  const { data, futurePlanned, recurringSalary, recurringMealAllowance, update, updateFuturePlanned, updateRecurringIncome, addExpensesToMonths, loading, cloudEnabled, user, authReady, authError, signInWithGoogle, signOut } = useFinances(month);
+  const { data, futurePlanned, recurringSalary, recurringMealAllowance, profilePhoto, update, updateFuturePlanned, updateRecurringIncome, addExpensesToMonths, updateProfilePhoto, loading, cloudEnabled, user, authReady, authError, signInWithGoogle, signOut } = useFinances(month);
 
   useEffect(() => {
     window.localStorage.setItem(selectedMonthKey, month);
@@ -486,6 +488,32 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
     }
   }
 
+  async function chooseProfilePhoto(file?: File) {
+    if (!file) return;
+    setSavingProfilePhoto(true);
+    setProfilePhotoError("");
+    try {
+      const optimizedImage = await optimizeProductImage(file);
+      await updateProfilePhoto(optimizedImage);
+    } catch (error) {
+      setProfilePhotoError(error instanceof Error ? error.message : "NÃ£o foi possÃ­vel salvar a foto.");
+    } finally {
+      setSavingProfilePhoto(false);
+    }
+  }
+
+  async function removeProfilePhoto() {
+    setSavingProfilePhoto(true);
+    setProfilePhotoError("");
+    try {
+      await updateProfilePhoto(null);
+    } catch {
+      setProfilePhotoError("NÃ£o foi possÃ­vel remover a foto.");
+    } finally {
+      setSavingProfilePhoto(false);
+    }
+  }
+
   function makePurchase(item: PlannedPurchase) {
     const installments = Math.max(item.installments || 1, 1);
     const preferredDay = new Date().getDate();
@@ -541,6 +569,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
   const initials = user?.displayName
     ? user.displayName.split(" ").slice(0, 2).map((part) => part[0]).join("").toUpperCase()
     : "VO";
+  const profileAvatar = safeImageUrl(profilePhoto || user?.photoURL || "");
   const nextTheme = theme === "dark" ? "light" : "dark";
 
   function toggleTheme() {
@@ -578,7 +607,7 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
           <div className="small-note"><span><Icon name="cloud" size={17}/>{cloudEnabled && user ? "Sincronizado" : "Salvo neste navegador"}</span><small>{cloudEnabled && user ? `Conta de ${userName}` : "Conecte o Firebase quando quiser"}</small></div>
           <button className="theme-toggle" type="button" onClick={toggleTheme} aria-label={`Trocar para tema ${nextTheme === "dark" ? "escuro" : "claro"}`}><Icon name={theme === "dark" ? "sun" : "moon"} size={17}/><span>{theme === "dark" ? "Tema claro" : "Tema escuro"}</span></button>
           <Link className={view === "settings" ? "active" : ""} href="/configuracoes"><Icon name="settings"/>Configurações</Link>
-          <div className="profile"><span>{initials}</span><div><strong>{userName}</strong><small>{user?.email || "Modo local"}</small></div>{user && <button onClick={signOut} aria-label="Sair da conta" title="Sair"><Icon name="logout" size={17}/></button>}</div>
+          <div className="profile"><span className={`profile-avatar ${profileAvatar ? "has-photo" : ""}`} style={profileAvatar ? { backgroundImage: `url(${JSON.stringify(profileAvatar)})` } : undefined}>{profileAvatar ? null : initials}</span><div><strong>{userName}</strong><small>{user?.email || "Modo local"}</small></div>{user && <button onClick={signOut} aria-label="Sair da conta" title="Sair"><Icon name="logout" size={17}/></button>}</div>
         </div>
       </aside>
 
@@ -728,6 +757,18 @@ export function OrganizzeApp({ view = "overview" }: { view?: OrganizzeView }) {
             </article>
 
             <article className="panel settings-panel">
+              <div className="account-profile">
+                <span className={`account-avatar ${profileAvatar ? "has-photo" : ""}`} style={profileAvatar ? { backgroundImage: `url(${JSON.stringify(profileAvatar)})` } : undefined}>{profileAvatar ? null : initials}</span>
+                <div>
+                  <strong>{user?.displayName || "Modo local"}</strong>
+                  <small>{savingProfilePhoto ? "Salvando foto..." : profilePhoto ? "Foto personalizada" : user?.photoURL ? "Foto do Google" : "Sem foto personalizada"}</small>
+                  <div className="profile-photo-actions">
+                    <label className="secondary-button profile-photo-button"><input type="file" accept="image/jpeg,image/png,image/webp" disabled={savingProfilePhoto} onChange={(event) => { void chooseProfilePhoto(event.target.files?.[0]); event.currentTarget.value = ""; }}/><Icon name="plus" size={16}/>{profileAvatar ? "Trocar foto" : "Escolher foto"}</label>
+                    {profilePhoto && <button className="secondary-button" type="button" onClick={removeProfilePhoto} disabled={savingProfilePhoto}>Remover foto</button>}
+                  </div>
+                </div>
+              </div>
+              {profilePhotoError && <div className="form-error profile-photo-error">{profilePhotoError}</div>}
               <div className="settings-heading"><span className="settings-icon"><Icon name="cloud"/></span><div><span className="eyebrow">CONTA E SINCRONIZAÇÃO</span><h2>{cloudEnabled ? "Dados protegidos na nuvem" : "Dados neste dispositivo"}</h2><p>{cloudEnabled ? "Suas alterações são sincronizadas automaticamente." : "O modo local mantém tudo salvo apenas neste navegador."}</p></div></div>
               <div className="account-details"><div><span>Perfil</span><strong>{user?.displayName || "Modo local"}</strong></div><div><span>E-mail</span><strong>{user?.email || "Não conectado"}</strong></div><div><span>Status</span><strong className="sync-status"><i/>{cloudEnabled ? "Sincronizado" : "Armazenamento local"}</strong></div></div>
               <button className="secondary-button" type="button" onClick={toggleTheme}><Icon name={theme === "dark" ? "sun" : "moon"} size={17}/>{theme === "dark" ? "Usar tema claro" : "Usar tema escuro"}</button>

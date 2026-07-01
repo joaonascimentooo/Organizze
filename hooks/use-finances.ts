@@ -9,13 +9,15 @@ import {
   signOut as firebaseSignOut,
   type User,
 } from "firebase/auth";
-import { arrayUnion, doc, onSnapshot, setDoc } from "firebase/firestore";
+import { arrayUnion, deleteField, doc, onSnapshot, setDoc } from "firebase/firestore";
 import { auth, db, hasFirebaseConfig } from "@/lib/firebase";
 import { emptyMonth, Expense, FuturePlanningData, IncomeChange, IncomePreferences, MonthData, PlannedPurchase } from "@/lib/types";
+import { blobToDataUrl } from "@/lib/product-images";
 
 const localKey = (month: string) => `organizze:${month}`;
 const localFutureKey = "organizze:planned:future";
 const localIncomeKey = "organizze:preferences:income";
+const localProfileKey = "organizze:preferences:profile";
 const emptyIncomePreferences = (): IncomePreferences => ({ salary: [], mealAllowance: [] });
 
 function firestoreSafe(data: MonthData): MonthData {
@@ -53,6 +55,7 @@ export function useFinances(month: string) {
   const [data, setData] = useState<MonthData>(emptyMonth());
   const [futurePlanned, setFuturePlanned] = useState<PlannedPurchase[]>([]);
   const [incomePreferences, setIncomePreferences] = useState<IncomePreferences>(emptyIncomePreferences());
+  const [profilePhoto, setProfilePhoto] = useState("");
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(() => auth?.currentUser ?? null);
   const [authReady, setAuthReady] = useState(() => !hasFirebaseConfig || Boolean(auth?.currentUser));
@@ -65,6 +68,7 @@ export function useFinances(month: string) {
         const savedMonth = saved ? normalizeMonthData(JSON.parse(saved) as Partial<MonthData>) : emptyMonth();
         const savedFuture = JSON.parse(localStorage.getItem(localFutureKey) || "[]") as PlannedPurchase[];
         const savedIncome = normalizeIncomePreferences(JSON.parse(localStorage.getItem(localIncomeKey) || "{}") as Partial<IncomePreferences>);
+        const savedProfile = JSON.parse(localStorage.getItem(localProfileKey) || "{}") as Partial<{ photoDataUrl: string }>;
         const legacyFuture = savedMonth.planned.filter((item) => item.timing === "future");
         const nextFuture = [...savedFuture, ...legacyFuture]
           .filter((item, index, items) => items.findIndex((candidate) => candidate.id === item.id) === index)
@@ -86,6 +90,7 @@ export function useFinances(month: string) {
         };
         if (JSON.stringify(nextIncome) !== JSON.stringify(savedIncome)) localStorage.setItem(localIncomeKey, JSON.stringify(nextIncome));
         setIncomePreferences(nextIncome);
+        setProfilePhoto(typeof savedProfile.photoDataUrl === "string" ? savedProfile.photoDataUrl : "");
         setLoading(false);
       }, 0);
       return () => window.clearTimeout(timer);
@@ -97,6 +102,7 @@ export function useFinances(month: string) {
       setAuthReady(true);
       if (!currentUser) {
         setData(emptyMonth());
+        setProfilePhoto("");
         setLoading(false);
       }
     });
@@ -137,6 +143,15 @@ export function useFinances(month: string) {
     return onSnapshot(reference, (snapshot) => {
       const saved = snapshot.exists() ? normalizeIncomePreferences(snapshot.data() as Partial<IncomePreferences>) : emptyIncomePreferences();
       setIncomePreferences(saved);
+    });
+  }, [user]);
+
+  useEffect(() => {
+    if (!hasFirebaseConfig || !user || !db) return;
+    const reference = doc(db, "users", user.uid, "preferences", "profile");
+    return onSnapshot(reference, (snapshot) => {
+      const saved = snapshot.exists() ? snapshot.data() as Partial<{ photoDataUrl: string }> : {};
+      setProfilePhoto(typeof saved.photoDataUrl === "string" ? saved.photoDataUrl : "");
     });
   }, [user]);
 
@@ -210,6 +225,23 @@ export function useFinances(month: string) {
     }
   }, [user]);
 
+  const updateProfilePhoto = useCallback(async (blob: Blob | null) => {
+    const photoDataUrl = blob ? await blobToDataUrl(blob) : "";
+    setProfilePhoto(photoDataUrl);
+    if (!hasFirebaseConfig) {
+      if (photoDataUrl) localStorage.setItem(localProfileKey, JSON.stringify({ photoDataUrl }));
+      else localStorage.removeItem(localProfileKey);
+      return;
+    }
+    if (user && db) {
+      await setDoc(
+        doc(db, "users", user.uid, "preferences", "profile"),
+        photoDataUrl ? { photoDataUrl } : { photoDataUrl: deleteField() },
+        { merge: true },
+      );
+    }
+  }, [user]);
+
   const signInWithGoogle = useCallback(async () => {
     if (!auth) {
       setAuthError("Configure o Firebase para habilitar o login com Google.");
@@ -241,5 +273,5 @@ export function useFinances(month: string) {
   const recurringSalary = effectiveIncome(incomePreferences.salary, month);
   const recurringMealAllowance = effectiveIncome(incomePreferences.mealAllowance, month);
 
-  return { data, futurePlanned, recurringSalary, recurringMealAllowance, update, updateFuturePlanned, updateRecurringIncome, addExpensesToMonths, loading, cloudEnabled: hasFirebaseConfig, user, authReady, authError, signInWithGoogle, signOut };
+  return { data, futurePlanned, recurringSalary, recurringMealAllowance, profilePhoto, update, updateFuturePlanned, updateRecurringIncome, addExpensesToMonths, updateProfilePhoto, loading, cloudEnabled: hasFirebaseConfig, user, authReady, authError, signInWithGoogle, signOut };
 }

@@ -41,6 +41,8 @@ button { color: inherit; }
 .small-note small { display: block; margin-top: 6px; color: rgba(255,255,255,.45); font-size: 9.5px; line-height: 1.5; }
 .profile { display: flex; align-items: center; gap: 10px; padding: 17px 10px 2px; border-top: 1px solid rgba(255,255,255,.09); margin-top: 8px; }
 .profile > span { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; background: var(--lime); color: var(--green); font-size: 11px; font-weight: 800; }
+.profile-avatar { overflow: hidden; flex: 0 0 auto; }
+.profile-avatar.has-photo { background: rgba(255,255,255,.12) center/cover no-repeat; }
 .profile div { display: grid; gap: 2px; min-width: 0; font-size: 12px; }.profile small { max-width: 120px; overflow: hidden; color: rgba(255,255,255,.45); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }.profile button { margin-left: auto; padding: 6px; border: 0; background: transparent; color: rgba(255,255,255,.5); cursor: pointer; }.profile button:hover { color: var(--lime); }
 
 .auth-page { width: 100%; min-height: 100vh; margin: 0; padding: 24px; display: grid; place-items: center; background: #eef2eb; }
@@ -347,6 +349,16 @@ header p { font-size: 14px; line-height: 1.55; }
 .settings-form input:focus, .settings-form select:focus { border-color: var(--green-2); box-shadow: 0 0 0 3px rgba(45,103,79,.1); }
 .settings-scope { max-width: 340px; margin-top: 14px; display: grid; gap: 8px; color: #4f5a52; font-size: 12px; font-weight: 750; }
 .settings-form .primary-button { min-width: 190px; margin-top: 16px; padding: 0 18px; }
+.account-profile { margin-bottom: 22px; padding: 14px; display: flex; align-items: center; gap: 14px; border: 1px solid var(--line); border-radius: 14px; background: #f7f9f5; }
+.account-avatar { width: 68px; height: 68px; flex: 0 0 auto; display: grid; place-items: center; overflow: hidden; border-radius: 50%; color: var(--green); background: var(--lime); font-size: 18px; font-weight: 850; }
+.account-avatar.has-photo { background: #e7ece4 center/cover no-repeat; }
+.account-profile > div { min-width: 0; display: grid; gap: 5px; }
+.account-profile strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.account-profile small { color: var(--muted); font-size: 10px; }
+.profile-photo-actions { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 8px; }
+.profile-photo-button { position: relative; }
+.profile-photo-button input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
+.profile-photo-error { margin: -8px 0 16px; }
 .account-details { margin: 22px 0 18px; display: grid; gap: 1px; overflow: hidden; border: 1px solid var(--line); border-radius: 13px; background: var(--line); }
 .account-details > div { min-height: 54px; padding: 10px 13px; display: flex; align-items: center; justify-content: space-between; gap: 18px; background: white; }
 .account-details span { color: var(--muted); font-size: 11px; }
@@ -374,6 +386,8 @@ header p { font-size: 14px; line-height: 1.55; }
   .settings-form .primary-button { width: 100%; }
   .month-data-summary { grid-template-columns: 1fr; }
   .month-data-summary > div { grid-template-columns: auto 1fr; align-items: center; text-align: left; }
+  .account-profile { align-items: flex-start; flex-direction: column; }
+  .profile-photo-actions, .profile-photo-actions .secondary-button { width: 100%; }
   .account-details > div { align-items: flex-start; flex-direction: column; gap: 4px; }
   .account-details strong { max-width: 100%; }
 }
@@ -407,10 +421,10 @@ html[data-theme="dark"] .auth-orbit, html[data-theme="dark"] .card-icon.lime, ht
 html[data-theme="dark"] .google-button { border-color: var(--line); color: var(--ink); }
 html[data-theme="dark"] .google-button:hover, html[data-theme="dark"] .quick-action:hover, html[data-theme="dark"] .secondary-button:hover { background: #1b2821; border-color: #405146; box-shadow: 0 12px 28px rgba(0,0,0,.24); }
 html[data-theme="dark"] .month-picker button:hover, html[data-theme="dark"] .modal-close { background: #223027; }
-html[data-theme="dark"] .local-banner, html[data-theme="dark"] .status-pill, html[data-theme="dark"] .buy-button, html[data-theme="dark"] .spending-impact, html[data-theme="dark"] .expense-filters, html[data-theme="dark"] .empty-state > span, html[data-theme="dark"] .installment-box, html[data-theme="dark"] .product-form-preview, html[data-theme="dark"] .product-link-field > button, html[data-theme="dark"] .month-data-summary > div { background: #1a261f; }
+html[data-theme="dark"] .local-banner, html[data-theme="dark"] .status-pill, html[data-theme="dark"] .buy-button, html[data-theme="dark"] .spending-impact, html[data-theme="dark"] .expense-filters, html[data-theme="dark"] .empty-state > span, html[data-theme="dark"] .installment-box, html[data-theme="dark"] .product-form-preview, html[data-theme="dark"] .product-link-field > button, html[data-theme="dark"] .month-data-summary > div, html[data-theme="dark"] .account-profile { background: #1a261f; }
 html[data-theme="dark"] .local-banner { color: #aab6ae; }
 html[data-theme="dark"] .local-banner span, html[data-theme="dark"] .text-button, html[data-theme="dark"] .product-actions > a, html[data-theme="dark"] .sync-status, html[data-theme="dark"] .secondary-button, html[data-theme="dark"] .product-link-field > button, html[data-theme="dark"] .empty-state button { color: var(--green); }
-html[data-theme="dark"] .summary-card, html[data-theme="dark"] .panel, html[data-theme="dark"] .month-picker, html[data-theme="dark"] .quick-action, html[data-theme="dark"] .product-card, html[data-theme="dark"] .modal, html[data-theme="dark"] .account-details, html[data-theme="dark"] .secondary-button, html[data-theme="dark"] .product-link-field > button { border-color: var(--line); }
+html[data-theme="dark"] .summary-card, html[data-theme="dark"] .panel, html[data-theme="dark"] .month-picker, html[data-theme="dark"] .quick-action, html[data-theme="dark"] .product-card, html[data-theme="dark"] .modal, html[data-theme="dark"] .account-details, html[data-theme="dark"] .account-profile, html[data-theme="dark"] .secondary-button, html[data-theme="dark"] .product-link-field > button { border-color: var(--line); }
 html[data-theme="dark"] .card-heading button, html[data-theme="dark"] .icon-button { color: #7f8c84; }
 html[data-theme="dark"] .icon-button:hover { color: var(--coral); }
 html[data-theme="dark"] .card-icon.coral { background: rgba(255,154,132,.16); color: #ffb19f; }
